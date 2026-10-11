@@ -1,7 +1,5 @@
 package ru.andrey1859.zxctag
 
-import net.kyori.adventure.text.Component
-import net.kyori.adventure.text.format.NamedTextColor
 import org.bukkit.Bukkit
 import org.bukkit.Color
 import org.bukkit.entity.Display
@@ -61,19 +59,12 @@ object HpDisplayTracker : Listener {
         displays.remove(player.uniqueId)?.let { if (it.isValid) it.remove() }
     }
 
+    @Suppress("DEPRECATION")
     private fun spawn(player: Player, hp: String) {
         displays.remove(player.uniqueId)?.let { if (it.isValid) it.remove() }
 
         val display = player.world.spawn(player.location, TextDisplay::class.java)
-        try {
-            display.text(
-                Component.text("$hp ").color(NamedTextColor.WHITE)
-                    .append(Component.text("❤", NamedTextColor.RED))
-            )
-        } catch (t: Throwable) {
-            @Suppress("DEPRECATION")
-            display.setText("§f$hp §c❤")
-        }
+        display.setText("§f$hp §c❤")
         try {
             display.billboard = Display.Billboard.CENTER
         } catch (_: Throwable) {

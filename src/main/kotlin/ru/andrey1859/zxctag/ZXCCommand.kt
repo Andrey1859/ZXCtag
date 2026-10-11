@@ -1,7 +1,5 @@
 package ru.andrey1859.zxctag
 
-import net.kyori.adventure.text.Component
-import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer
 import org.bukkit.Bukkit
 import org.bukkit.command.Command
 import org.bukkit.command.CommandExecutor
@@ -19,7 +17,6 @@ object ZXCCommand : CommandExecutor, TabCompleter {
     private val LEVELS = listOf("1", "5", "10", "20", "30", "50", "100")
     private val US_VALUES = listOf("0", "1", "5", "10", "20")
     private val HP_VALUES = listOf("10", "20", "50", "100", "200")
-    private val legacy = LegacyComponentSerializer.legacySection()
 
     override fun onCommand(sender: CommandSender, command: Command, label: String, args: Array<out String>): Boolean {
         try {
@@ -70,6 +67,7 @@ object ZXCCommand : CommandExecutor, TabCompleter {
         return options.filter { it.startsWith(current, ignoreCase = true) }
     }
 
+    @Suppress("DEPRECATION")
     private fun applyPrefix(player: Player, className: String, status: String, lvl: String, us: String) {
         val board = Bukkit.getScoreboardManager()?.mainScoreboard
             ?: error("Scoreboard недоступен")
@@ -81,14 +79,8 @@ object ZXCCommand : CommandExecutor, TabCompleter {
             current.removeEntry(player.name)
         }
 
-        val prefix = PrefixBuilder.build(className, status, lvl, us)
-        try {
-            team.prefix(prefix)
-            team.suffix(Component.empty())
-        } catch (t: Throwable) {
-            team.setPrefix(legacy.serialize(prefix))
-            team.setSuffix("")
-        }
+        team.setPrefix(PrefixBuilder.build(className, status, lvl, us))
+        team.setSuffix("")
         if (!team.hasEntry(player.name)) {
             team.addEntry(player.name)
         }
