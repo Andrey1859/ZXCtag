@@ -1,5 +1,6 @@
 {
-  "providers": [
+  "_readme": "Это СПИСОК символов для сборки, а не готовый шрифт. В мод попадают только записи с заполненным file (картинка должна лежать в assets/zxctextures/textures/font/), записи с пустым file пропускаются.",
+  "glyphs": [
     {
       "_symbol": "奤  U+5964",
       "_note": "ВПИШИ ИМЯ КАРТИНКИ В file -> zxctextures:font/ИМЯ.png",
