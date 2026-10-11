@@ -89,6 +89,15 @@
       "file": "",
       "height": 8,
       "ascent": 7
+    },
+    {
+      "_symbol": "🏹  U+1F3F9",
+      "_note": "ВПИШИ ИМЯ КАРТИНКИ В file -> zxctextures:font/ИМЯ.png",
+      "type": "bitmap",
+      "chars": ["\ud83c\udff9"],
+      "file": "",
+      "height": 8,
+      "ascent": 7
     }
   ]
 }
