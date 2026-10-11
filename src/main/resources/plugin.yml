@@ -1,0 +1,22 @@
+name: ZXCtag
+version: ${version}
+main: ru.andrey1859.zxctag.ZXCtagPlugin
+api-version: "1.21"
+author: Andrey1859
+description: Префикс класса и жёлтый уровень
+commands:
+  zxc:
+    description: Выдать префикс с ZXC, класс и уровень
+    usage: /zxc <ник> <класс> <статус> <лвл> <ус>
+    permission: zxctag.zxc
+  prefix:
+    description: Выдать префикс без ZXC
+    usage: /prefix <ник> <класс> <статус> <лвл> <ус>
+    permission: zxctag.prefix
+permissions:
+  zxctag.zxc:
+    description: Использование /zxc
+    default: op
+  zxctag.prefix:
+    description: Использование /prefix
+    default: op

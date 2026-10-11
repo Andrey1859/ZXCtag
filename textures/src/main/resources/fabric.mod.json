@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "zxctextures",
+  "version": "${version}",
+  "name": "ZXC Textures",
+  "description": "Replaces chosen characters with images in all in-game text (client side).",
+  "authors": [
+    "Andrey1859"
+  ],
+  "environment": "client",
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": "~1.21.1",
+    "fabric-api": "*"
+  }
+}

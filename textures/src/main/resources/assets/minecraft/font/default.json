@@ -1,0 +1,104 @@
+{
+  "_readme": "Это СПИСОК символов для сборки, а не готовый шрифт. В мод попадают только записи с заполненным file (картинка должна лежать в assets/zxctextures/textures/font/), записи с пустым file пропускаются.",
+  "glyphs": [
+    {
+      "_symbol": "奤  U+5964",
+      "_note": "ВПИШИ ИМЯ КАРТИНКИ В file -> zxctextures:font/ИМЯ.png",
+      "type": "bitmap",
+      "chars": ["\u5964"],
+      "file": "",
+      "height": 8,
+      "ascent": 7
+    },
+    {
+      "_symbol": "Ⴌ  U+10AC",
+      "_note": "ВПИШИ ИМЯ КАРТИНКИ В file -> zxctextures:font/ИМЯ.png",
+      "type": "bitmap",
+      "chars": ["\u10ac"],
+      "file": "",
+      "height": 8,
+      "ascent": 7
+    },
+    {
+      "_symbol": "❤  U+2764",
+      "_note": "ВПИШИ ИМЯ КАРТИНКИ В file -> zxctextures:font/ИМЯ.png",
+      "type": "bitmap",
+      "chars": ["\u2764"],
+      "file": "",
+      "height": 8,
+      "ascent": 7
+    },
+    {
+      "_symbol": "✠  U+2720",
+      "_note": "ВПИШИ ИМЯ КАРТИНКИ В file -> zxctextures:font/ИМЯ.png",
+      "type": "bitmap",
+      "chars": ["\u2720"],
+      "file": "",
+      "height": 8,
+      "ascent": 7
+    },
+    {
+      "_symbol": "☠  U+2620",
+      "_note": "ВПИШИ ИМЯ КАРТИНКИ В file -> zxctextures:font/ИМЯ.png",
+      "type": "bitmap",
+      "chars": ["\u2620"],
+      "file": "",
+      "height": 8,
+      "ascent": 7
+    },
+    {
+      "_symbol": "▭  U+25AD",
+      "_note": "ВПИШИ ИМЯ КАРТИНКИ В file -> zxctextures:font/ИМЯ.png",
+      "type": "bitmap",
+      "chars": ["\u25ad"],
+      "file": "",
+      "height": 8,
+      "ascent": 7
+    },
+    {
+      "_symbol": "ⁿ  U+207F",
+      "_note": "ВПИШИ ИМЯ КАРТИНКИ В file -> zxctextures:font/ИМЯ.png",
+      "type": "bitmap",
+      "chars": ["\u207f"],
+      "file": "",
+      "height": 8,
+      "ascent": 7
+    },
+    {
+      "_symbol": "ὅ  U+1F45",
+      "_note": "ВПИШИ ИМЯ КАРТИНКИ В file -> zxctextures:font/ИМЯ.png",
+      "type": "bitmap",
+      "chars": ["\u1f45"],
+      "file": "",
+      "height": 8,
+      "ascent": 7
+    },
+    {
+      "_symbol": "⒮  U+24AE",
+      "_note": "ВПИШИ ИМЯ КАРТИНКИ В file -> zxctextures:font/ИМЯ.png",
+      "type": "bitmap",
+      "chars": ["\u24ae"],
+      "file": "",
+      "height": 8,
+      "ascent": 7
+    },
+    {
+      "_symbol": "ꚍ  U+A68D",
+      "_note": "ВПИШИ ИМЯ КАРТИНКИ В file -> zxctextures:font/ИМЯ.png",
+      "type": "bitmap",
+      "chars": ["\ua68d"],
+      "file": "",
+      "height": 8,
+      "ascent": 7
+    },
+    {
+      "_symbol": "🏹  U+1F3F9",
+      "_note": "ВПИШИ ИМЯ КАРТИНКИ В file -> zxctextures:font/ИМЯ.png",
+      "type": "bitmap",
+      "chars": ["\ud83c\udff9"],
+      "file": "",
+      "height": 8,
+      "ascent": 7
+    }
+  ]
+}
