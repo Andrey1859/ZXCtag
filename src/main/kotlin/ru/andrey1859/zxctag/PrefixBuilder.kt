@@ -65,7 +65,7 @@ object PrefixBuilder {
             append(piece(YELLOW, lvl))
             append(piece(YELLOW, "]"))
             append(piece(hex(0xFFAA00), "◥ "))
-            append(piece(AQUA, "УС: ", bold = true))
+            append(piece(WHITE, "УС: ", bold = true))
             append(piece(AQUA, us))
             append(piece(WHITE, "奤 "))
         }
