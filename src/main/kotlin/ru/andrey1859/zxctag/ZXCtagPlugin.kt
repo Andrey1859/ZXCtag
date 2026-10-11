@@ -4,6 +4,7 @@ import org.bukkit.plugin.java.JavaPlugin
 
 class ZXCtagPlugin : JavaPlugin() {
     override fun onEnable() {
+        instance = this
         HpDisplayTracker.start(this)
         getCommand("zxc")?.apply {
             setExecutor(ZXCCommand)
@@ -14,5 +15,10 @@ class ZXCtagPlugin : JavaPlugin() {
 
     override fun onDisable() {
         HpDisplayTracker.stop()
+    }
+
+    companion object {
+        lateinit var instance: ZXCtagPlugin
+            private set
     }
 }

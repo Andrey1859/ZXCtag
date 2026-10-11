@@ -14,6 +14,7 @@ import org.bukkit.event.player.PlayerRespawnEvent
 import org.bukkit.plugin.java.JavaPlugin
 import org.bukkit.scheduler.BukkitTask
 import java.util.UUID
+import java.util.logging.Level
 
 object HpDisplayTracker : Listener {
     private val displays = HashMap<UUID, TextDisplay>()
@@ -30,12 +31,14 @@ object HpDisplayTracker : Listener {
                 val hp = hpByPlayer[uuid] ?: return@forEach
                 val display = displays[uuid]
                 if (display == null || !display.isValid) {
-                    spawn(player, hp)
+                    try {
+                        spawn(player, hp)
+                    } catch (t: Throwable) {
+                        plugin.logger.log(Level.SEVERE, "HP spawn tick", t)
+                    }
                     return@forEach
                 }
-                if (!player.passengers.contains(display)) {
-                    player.addPassenger(display)
-                }
+                keepWithPlayer(player, display)
             }
         }, 1L, 1L)
     }
@@ -61,21 +64,48 @@ object HpDisplayTracker : Listener {
     private fun spawn(player: Player, hp: String) {
         displays.remove(player.uniqueId)?.let { if (it.isValid) it.remove() }
 
-        val display = player.world.spawn(player.location, TextDisplay::class.java) { ent ->
-            ent.text(
+        val display = player.world.spawn(player.location, TextDisplay::class.java)
+        try {
+            display.text(
                 Component.text("$hp ").color(NamedTextColor.WHITE)
                     .append(Component.text("❤", NamedTextColor.RED))
             )
-            ent.billboard = Display.Billboard.CENTER
-            ent.backgroundColor = Color.fromARGB(0, 0, 0, 0)
-            ent.isShadowed = false
-            ent.teleportDuration = 0
-            val trans = ent.transformation
-            trans.translation.set(0f, -0.4f, 0f)
-            ent.transformation = trans
+        } catch (t: Throwable) {
+            @Suppress("DEPRECATION")
+            display.setText("§f$hp §c❤")
         }
-        player.addPassenger(display)
+        try {
+            display.billboard = Display.Billboard.CENTER
+        } catch (_: Throwable) {
+        }
+        try {
+            display.backgroundColor = Color.fromARGB(0, 0, 0, 0)
+        } catch (_: Throwable) {
+        }
+        try {
+            val trans = display.transformation
+            trans.translation.set(0f, -0.4f, 0f)
+            display.transformation = trans
+        } catch (_: Throwable) {
+        }
+
+        keepWithPlayer(player, display)
         displays[player.uniqueId] = display
+    }
+
+    private fun keepWithPlayer(player: Player, display: TextDisplay) {
+        if (!display.isValid) return
+        if (!player.passengers.contains(display)) {
+            try {
+                player.addPassenger(display)
+            } catch (_: Throwable) {
+            }
+        }
+        if (!player.passengers.contains(display)) {
+            val loc = player.location.clone()
+            loc.y = player.location.y + player.height + 0.15
+            display.teleport(loc)
+        }
     }
 
     @EventHandler
@@ -89,7 +119,11 @@ object HpDisplayTracker : Listener {
         val plugin = plugin ?: return
         Bukkit.getScheduler().runTaskLater(plugin, Runnable {
             if (event.player.isOnline) {
-                spawn(event.player, hp)
+                try {
+                    spawn(event.player, hp)
+                } catch (t: Throwable) {
+                    plugin.logger.log(Level.SEVERE, "HP spawn respawn", t)
+                }
             }
         }, 1L)
     }
