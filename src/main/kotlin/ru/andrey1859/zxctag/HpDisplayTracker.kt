@@ -124,7 +124,7 @@ object HpDisplayTracker {
             spawn(player, hpByPlayer[player.uuid] ?: return)
             return
         }
-        display.teleport(player.x, y, player.z)
+        display.requestTeleport(player.x, y, player.z)
         display.refreshPositionAndAngles(player.x, y, player.z, 0f, 0f)
     }
 
