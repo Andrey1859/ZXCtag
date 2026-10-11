@@ -14,6 +14,22 @@ base {
 }
 
 repositories {
+    maven("https://maven.fabricmc.net/") {
+        name = "Fabric"
+    }
+    maven("https://libraries.minecraft.net/") {
+        name = "Minecraft"
+    }
+    // repo.maven.apache.org (mavenCentral) often returns 403
+    maven("https://repo1.maven.org/maven2/") {
+        name = "MavenCentralRepo1"
+    }
+    maven("https://maven.aliyun.com/repository/public") {
+        name = "AliyunPublic"
+    }
+    maven("https://repo.huaweicloud.com/repository/maven/") {
+        name = "HuaweiCloud"
+    }
     mavenCentral()
 }
 
