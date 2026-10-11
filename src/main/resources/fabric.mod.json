@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "id": "zxctag",
+  "version": "${version}",
+  "name": "ZXCtag",
+  "description": "Префикс класса, жёлтый уровень и HP над игроком для Fabric 1.21.1",
+  "authors": [
+    "Andrey1859"
+  ],
+  "license": "MIT",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      {
+        "adapter": "kotlin",
+        "value": "ru.andrey1859.zxctag.ZXCtagMod"
+      }
+    ]
+  },
+  "accessWidener": "zxctag.accesswidener",
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": "~1.21.1",
+    "java": ">=21",
+    "fabric-api": "*",
+    "fabric-language-kotlin": "*"
+  }
+}
