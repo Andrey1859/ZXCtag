@@ -16,7 +16,6 @@ object ZXCCommand : CommandExecutor, TabCompleter {
     private val STATUSES = listOf("none", "premium", "admin")
     private val LEVELS = listOf("1", "5", "10", "20", "30", "50", "100")
     private val US_VALUES = listOf("0", "1", "5", "10", "20")
-    private val HP_VALUES = listOf("10", "20", "50", "100", "200")
 
     override fun onCommand(sender: CommandSender, command: Command, label: String, args: Array<out String>): Boolean {
         try {
@@ -29,8 +28,8 @@ object ZXCCommand : CommandExecutor, TabCompleter {
     }
 
     private fun handle(sender: CommandSender, args: Array<out String>): Boolean {
-        if (args.size != 6) {
-            sender.sendMessage("§cИспользование: /zxc <ник> <класс> <статус> <лвл> <ус> <хп>")
+        if (args.size < 5) {
+            sender.sendMessage("§cИспользование: /zxc <ник> <класс> <статус> <лвл> <ус>")
             sender.sendMessage("§7Классы: §e${CLASSES.joinToString(", ")}")
             sender.sendMessage("§7Статус: §e${STATUSES.joinToString(", ")}")
             return true
@@ -43,8 +42,7 @@ object ZXCCommand : CommandExecutor, TabCompleter {
         }
 
         applyPrefix(target, args[1], args[2], args[3], args[4])
-        HpDisplayTracker.spawnOrUpdate(target, args[5])
-        sender.sendMessage("§aПрефикс и HP выданы игроку ${target.name}")
+        sender.sendMessage("§aПрефикс выдан игроку ${target.name}")
         return true
     }
 
@@ -61,7 +59,6 @@ object ZXCCommand : CommandExecutor, TabCompleter {
             3 -> STATUSES
             4 -> LEVELS
             5 -> US_VALUES
-            6 -> HP_VALUES
             else -> return emptyList()
         }
         return options.filter { it.startsWith(current, ignoreCase = true) }

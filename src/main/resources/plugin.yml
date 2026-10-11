@@ -3,11 +3,11 @@ version: ${version}
 main: ru.andrey1859.zxctag.ZXCtagPlugin
 api-version: "1.21"
 author: Andrey1859
-description: Префикс класса, жёлтый уровень и HP над игроком
+description: Префикс класса и жёлтый уровень
 commands:
   zxc:
-    description: Выдать префикс, уровень и HP
-    usage: /zxc <ник> <класс> <статус> <лвл> <ус> <хп>
+    description: Выдать префикс и уровень
+    usage: /zxc <ник> <класс> <статус> <лвл> <ус>
     permission: zxctag.zxc
 permissions:
   zxctag.zxc:
