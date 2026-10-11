@@ -15,6 +15,9 @@ import java.util.UUID
 import java.util.logging.Level
 
 object HpDisplayTracker : Listener {
+    /** Just below the vanilla nametag (nametag sits ~0.5 above the hitbox). */
+    private const val UNDER_NAMETAG = 0.42
+
     private val displays = HashMap<UUID, TextDisplay>()
     private val hpByPlayer = HashMap<UUID, String>()
     private var task: BukkitTask? = null
@@ -63,7 +66,7 @@ object HpDisplayTracker : Listener {
     private fun spawn(player: Player, hp: String) {
         displays.remove(player.uniqueId)?.let { if (it.isValid) it.remove() }
 
-        val display = player.world.spawn(player.location, TextDisplay::class.java)
+        val display = player.world.spawn(aboveHead(player), TextDisplay::class.java)
         display.setText("§f$hp §c❤")
         try {
             display.billboard = Display.Billboard.CENTER
@@ -74,28 +77,35 @@ object HpDisplayTracker : Listener {
         } catch (_: Throwable) {
         }
         try {
-            val trans = display.transformation
-            trans.translation.set(0f, -0.4f, 0f)
-            display.transformation = trans
+            display.teleportDuration = 0
         } catch (_: Throwable) {
         }
 
-        keepWithPlayer(player, display)
+        hideFromOwner(player, display)
         displays[player.uniqueId] = display
     }
 
     private fun keepWithPlayer(player: Player, display: TextDisplay) {
         if (!display.isValid) return
-        if (!player.passengers.contains(display)) {
-            try {
-                player.addPassenger(display)
-            } catch (_: Throwable) {
-            }
+        if (display.vehicle != null) {
+            display.leaveVehicle()
         }
-        if (!player.passengers.contains(display)) {
-            val loc = player.location.clone()
-            loc.y = player.location.y + player.height + 0.15
-            display.teleport(loc)
+        display.teleport(aboveHead(player))
+        hideFromOwner(player, display)
+    }
+
+    private fun aboveHead(player: Player) = player.location.clone().apply {
+        y = player.location.y + player.height + UNDER_NAMETAG
+    }
+
+    /**
+     * Same rule as the nametag: the owner must not see their own HP label.
+     */
+    private fun hideFromOwner(player: Player, display: TextDisplay) {
+        val plugin = plugin ?: return
+        try {
+            player.hideEntity(plugin, display)
+        } catch (_: Throwable) {
         }
     }
 
