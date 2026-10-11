@@ -1,168 +1,90 @@
 package ru.andrey1859.zxctag
 
-import com.mojang.brigadier.Command
-import com.mojang.brigadier.context.CommandContext
-import com.mojang.brigadier.suggestion.SuggestionProvider
-import com.mojang.brigadier.suggestion.Suggestions
-import com.mojang.brigadier.suggestion.SuggestionsBuilder
-import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback
-import net.minecraft.command.argument.EntityArgumentType
-import net.minecraft.scoreboard.Team
-import net.minecraft.server.command.CommandManager.argument
-import net.minecraft.server.command.CommandManager.literal
-import net.minecraft.server.command.ServerCommandSource
-import net.minecraft.server.network.ServerPlayerEntity
-import net.minecraft.text.Text
-import net.minecraft.util.Formatting
-import java.util.concurrent.CompletableFuture
+import net.kyori.adventure.text.Component
+import net.kyori.adventure.text.format.NamedTextColor
+import org.bukkit.Bukkit
+import org.bukkit.command.Command
+import org.bukkit.command.CommandExecutor
+import org.bukkit.command.CommandSender
+import org.bukkit.command.TabCompleter
+import org.bukkit.entity.Player
 
-object ZXCCommand {
+object ZXCCommand : CommandExecutor, TabCompleter {
     private val CLASSES = listOf(
-        Hint("бард", "класс · тёмно-зелёный"),
-        Hint("лучник", "класс · тёмно-зелёный"),
-        Hint("заклинатель", "класс · тёмно-зелёный"),
-        Hint("некромант", "класс · тёмно-зелёный"),
-        Hint("жрец", "класс · тёмно-зелёный"),
-        Hint("шут", "класс · розовый"),
-        Hint("джокер", "класс · розовый"),
-        Hint("мушкетер", "класс · голубой"),
-        Hint("хранитель", "класс · синий"),
+        "бард", "лучник", "заклинатель", "некромант", "жрец",
+        "шут", "джокер", "мушкетер", "хранитель",
     )
-    private val STATUSES = listOf(
-        Hint("none", "без статуса"),
-        Hint("premium", "premium"),
-        Hint("admin", "admin"),
-    )
-    private val LEVELS = listOf("1", "5", "10", "20", "30", "50", "100").map { Hint(it, "уровень") }
-    private val US_VALUES = listOf("0", "1", "5", "10", "20").map { Hint(it, "УС") }
-    private val HP_VALUES = listOf("10", "20", "50", "100", "200").map { Hint(it, "хп") }
+    private val STATUSES = listOf("none", "premium", "admin")
+    private val LEVELS = listOf("1", "5", "10", "20", "30", "50", "100")
+    private val US_VALUES = listOf("0", "1", "5", "10", "20")
+    private val HP_VALUES = listOf("10", "20", "50", "100", "200")
 
-    fun register() {
-        CommandRegistrationCallback.EVENT.register { dispatcher, _, _ ->
-            dispatcher.register(
-                literal("zxc")
-                    .requires { it.hasPermissionLevel(2) }
-                    .executes { sendUsage(it) }
-                    .then(
-                        argument("ник", EntityArgumentType.player())
-                            .executes { sendUsage(it) }
-                            .then(
-                                argument("класс", UnquotedStringArgumentType.unquoted())
-                                    .suggests(hints(CLASSES))
-                                    .executes { sendUsage(it) }
-                                    .then(
-                                        argument("статус", UnquotedStringArgumentType.unquoted())
-                                            .suggests(hints(STATUSES))
-                                            .executes { sendUsage(it) }
-                                            .then(
-                                                argument("лвл", UnquotedStringArgumentType.unquoted())
-                                                    .suggests(hints(LEVELS))
-                                                    .executes { sendUsage(it) }
-                                                    .then(
-                                                        argument("ус", UnquotedStringArgumentType.unquoted())
-                                                            .suggests(hints(US_VALUES))
-                                                            .executes { sendUsage(it) }
-                                                            .then(
-                                                                argument("хп", UnquotedStringArgumentType.unquoted())
-                                                                    .suggests(hints(HP_VALUES))
-                                                                    .executes { execute(it) }
-                                                            )
-                                                    )
-                                            )
-                                    )
-                            )
-                    )
+    override fun onCommand(sender: CommandSender, command: Command, label: String, args: Array<out String>): Boolean {
+        if (args.size != 6) {
+            sender.sendMessage(Component.text("Использование: /zxc <ник> <класс> <статус> <лвл> <ус> <хп>", NamedTextColor.RED))
+            sender.sendMessage(
+                Component.text("Классы: ", NamedTextColor.GRAY)
+                    .append(Component.text(CLASSES.joinToString(", "), NamedTextColor.YELLOW))
             )
+            sender.sendMessage(
+                Component.text("Статус: ", NamedTextColor.GRAY)
+                    .append(Component.text(STATUSES.joinToString(", "), NamedTextColor.YELLOW))
+            )
+            return true
+        }
+
+        val target = Bukkit.getPlayerExact(args[0])
+        if (target == null) {
+            sender.sendMessage(Component.text("Игрок не найден", NamedTextColor.RED))
+            return true
+        }
+
+        applyPrefix(target, args[1], args[2], args[3], args[4])
+        HpDisplayTracker.spawnOrUpdate(target, args[5])
+        sender.sendMessage(Component.text("Префикс и HP выданы игроку ${target.name}", NamedTextColor.GREEN))
+        return true
+    }
+
+    override fun onTabComplete(
+        sender: CommandSender,
+        command: Command,
+        label: String,
+        args: Array<out String>,
+    ): List<String> {
+        val current = args.lastOrNull() ?: ""
+        val options = when (args.size) {
+            1 -> Bukkit.getOnlinePlayers().map { it.name }
+            2 -> CLASSES
+            3 -> STATUSES
+            4 -> LEVELS
+            5 -> US_VALUES
+            6 -> HP_VALUES
+            else -> return emptyList()
+        }
+        return options.filter { it.startsWith(current, ignoreCase = true) }
+    }
+
+    private fun applyPrefix(player: Player, className: String, status: String, lvl: String, us: String) {
+        val board = Bukkit.getScoreboardManager().mainScoreboard
+        val name = teamName(player)
+        val team = board.getTeam(name) ?: board.registerNewTeam(name)
+
+        player.scoreboard.teams
+            .filter { it != team && it.hasEntry(player.name) }
+            .forEach { it.removeEntry(player.name) }
+
+        team.prefix(PrefixBuilder.build(className, status, lvl, us))
+        team.suffix(Component.empty())
+        if (!team.hasEntry(player.name)) {
+            team.addEntry(player.name)
+        }
+        if (player.scoreboard != board) {
+            player.scoreboard = board
         }
     }
 
-    private fun sendUsage(context: CommandContext<ServerCommandSource>): Int {
-        context.source.sendError(
-            Text.literal("Использование: /zxc <ник> <класс> <статус> <лвл> <ус> <хп>")
-                .formatted(Formatting.RED)
-        )
-        context.source.sendFeedback(
-            {
-                Text.literal("Классы: ").formatted(Formatting.GRAY)
-                    .append(Text.literal(CLASSES.joinToString(", ") { it.value }).formatted(Formatting.YELLOW))
-            },
-            false,
-        )
-        context.source.sendFeedback(
-            {
-                Text.literal("Статус: ").formatted(Formatting.GRAY)
-                    .append(Text.literal("none, premium, admin").formatted(Formatting.YELLOW))
-            },
-            false,
-        )
-        return 0
-    }
-
-    private fun execute(context: CommandContext<ServerCommandSource>): Int {
-        val player = EntityArgumentType.getPlayer(context, "ник")
-        val className = context.getArgument("класс", String::class.java)
-        val status = context.getArgument("статус", String::class.java)
-        val lvl = context.getArgument("лвл", String::class.java)
-        val us = context.getArgument("ус", String::class.java)
-        val hp = context.getArgument("хп", String::class.java)
-
-        applyPrefix(player, className, status, lvl, us)
-        HpDisplayTracker.spawnOrUpdate(player, hp)
-        context.source.sendFeedback(
-            {
-                Text.literal("Префикс и HP выданы игроку ${player.name.string}")
-                    .formatted(Formatting.GREEN)
-            },
-            true,
-        )
-        return Command.SINGLE_SUCCESS
-    }
-
-    private fun applyPrefix(
-        player: ServerPlayerEntity,
-        className: String,
-        status: String,
-        lvl: String,
-        us: String,
-    ) {
-        val scoreboard = player.server.scoreboard
-        val teamName = teamName(player)
-        val team: Team = scoreboard.getTeam(teamName) ?: scoreboard.addTeam(teamName)
-
-        player.scoreboardTeam?.let { current ->
-            if (current !== team) {
-                scoreboard.removeScoreHolderFromTeam(player.nameForScoreboard, current)
-            }
-        }
-
-        team.color = Formatting.RESET
-        team.prefix = PrefixBuilder.build(className, status, lvl, us)
-        team.suffix = Text.empty()
-        scoreboard.addScoreHolderToTeam(player.nameForScoreboard, team)
-    }
-
-    /**
-     * Vanilla team names are capped at 16 characters, so the player name
-     * cannot be used directly.
-     */
-    private fun teamName(player: ServerPlayerEntity): String {
-        val hex = player.uuid.toString().replace("-", "")
+    private fun teamName(player: Player): String {
+        val hex = player.uniqueId.toString().replace("-", "")
         return "z" + hex.substring(0, 15)
     }
-
-    private fun hints(values: List<Hint>): SuggestionProvider<ServerCommandSource> {
-        return SuggestionProvider { _, builder -> suggest(builder, values) }
-    }
-
-    private fun suggest(builder: SuggestionsBuilder, values: List<Hint>): CompletableFuture<Suggestions> {
-        val remaining = builder.remaining.lowercase()
-        values.forEach { hint ->
-            if (remaining.isEmpty() || hint.value.lowercase().startsWith(remaining)) {
-                builder.suggest(hint.value, Text.literal(hint.tooltip))
-            }
-        }
-        return builder.buildFuture()
-    }
-
-    private data class Hint(val value: String, val tooltip: String)
 }

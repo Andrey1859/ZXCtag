@@ -2,8 +2,8 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     kotlin("jvm") version "2.0.21"
-    id("fabric-loom") version "1.9.2"
-    id("maven-publish")
+    id("com.gradleup.shadow") version "8.3.5"
+    id("java")
 }
 
 version = providers.gradleProperty("mod_version").get()
@@ -14,39 +14,25 @@ base {
 }
 
 repositories {
-    maven("https://maven.fabricmc.net/") {
-        name = "Fabric"
+    maven("https://repo.papermc.io/repository/maven-public/") {
+        name = "PaperMC"
     }
-    maven("https://libraries.minecraft.net/") {
-        name = "Minecraft"
-    }
-    // repo.maven.apache.org (mavenCentral) often returns 403
     maven("https://repo1.maven.org/maven2/") {
         name = "MavenCentralRepo1"
     }
     maven("https://maven.aliyun.com/repository/public") {
         name = "AliyunPublic"
     }
-    maven("https://repo.huaweicloud.com/repository/maven/") {
-        name = "HuaweiCloud"
-    }
     mavenCentral()
 }
 
-loom {
-    accessWidenerPath = file("src/main/resources/zxctag.accesswidener")
-}
-
 dependencies {
-    minecraft("com.mojang:minecraft:${property("minecraft_version")}")
-    mappings("net.fabricmc:yarn:${property("yarn_mappings")}:v2")
-    modImplementation("net.fabricmc:fabric-loader:${property("loader_version")}")
-    modImplementation("net.fabricmc.fabric-api:fabric-api:${property("fabric_api_version")}")
-    modImplementation("net.fabricmc:fabric-language-kotlin:${property("fabric_kotlin_version")}")
+    compileOnly("io.papermc.paper:paper-api:1.21.1-R0.1-SNAPSHOT")
+    implementation(kotlin("stdlib"))
 }
 
 java {
-    withSourcesJar()
+    toolchain.languageVersion.set(JavaLanguageVersion.of(21))
     sourceCompatibility = JavaVersion.VERSION_21
     targetCompatibility = JavaVersion.VERSION_21
 }
@@ -61,7 +47,7 @@ kotlin {
 tasks.processResources {
     val version = project.version.toString()
     inputs.property("version", version)
-    filesMatching("fabric.mod.json") {
+    filesMatching("plugin.yml") {
         expand("version" to version)
     }
 }
@@ -71,16 +57,19 @@ tasks.withType<JavaCompile>().configureEach {
     options.release.set(21)
 }
 
-tasks.jar {
-    from("LICENSE") {
-        rename { "${it}_${base.archivesName.get()}" }
-    }
+tasks.shadowJar {
+    archiveClassifier.set("")
+    mergeServiceFiles()
 }
 
-publishing {
-    publications {
-        create<MavenPublication>("mavenJava") {
-            from(components["java"])
-        }
-    }
+tasks.jar {
+    enabled = false
+}
+
+tasks.assemble {
+    dependsOn(tasks.shadowJar)
+}
+
+tasks.build {
+    dependsOn(tasks.shadowJar)
 }

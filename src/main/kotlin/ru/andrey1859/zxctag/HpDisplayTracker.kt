@@ -1,160 +1,96 @@
 package ru.andrey1859.zxctag
 
-import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents
-import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents
-import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents
-import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents
-import net.minecraft.entity.EntityType
-import net.minecraft.entity.decoration.DisplayEntity
-import net.minecraft.server.MinecraftServer
-import net.minecraft.server.network.ServerPlayerEntity
-import net.minecraft.text.Style
-import net.minecraft.text.Text
-import net.minecraft.util.Formatting
-import net.minecraft.util.math.AffineTransformation
-import org.joml.Quaternionf
-import org.joml.Vector3f
+import net.kyori.adventure.text.Component
+import net.kyori.adventure.text.format.NamedTextColor
+import org.bukkit.Bukkit
+import org.bukkit.Color
+import org.bukkit.entity.Display
+import org.bukkit.entity.Player
+import org.bukkit.entity.TextDisplay
+import org.bukkit.event.EventHandler
+import org.bukkit.event.Listener
+import org.bukkit.event.player.PlayerQuitEvent
+import org.bukkit.event.player.PlayerRespawnEvent
+import org.bukkit.plugin.java.JavaPlugin
+import org.bukkit.scheduler.BukkitTask
 import java.util.UUID
-import java.util.concurrent.ConcurrentHashMap
 
-object HpDisplayTracker {
-    private const val TAG = "zxctag_hp"
-    private val hpByPlayer = ConcurrentHashMap<UUID, String>()
-    private val displayByPlayer = ConcurrentHashMap<UUID, UUID>()
+object HpDisplayTracker : Listener {
+    private val displays = HashMap<UUID, TextDisplay>()
+    private val hpByPlayer = HashMap<UUID, String>()
+    private var task: BukkitTask? = null
+    private var plugin: JavaPlugin? = null
 
-    fun register() {
-        ServerTickEvents.END_SERVER_TICK.register { server ->
-            for (playerId in hpByPlayer.keys) {
-                val player = server.playerManager.getPlayer(playerId) ?: continue
-                val hp = hpByPlayer[playerId] ?: continue
-                val display = displayOf(player)
-                if (display == null || display.isRemoved) {
+    fun start(plugin: JavaPlugin) {
+        this.plugin = plugin
+        Bukkit.getPluginManager().registerEvents(this, plugin)
+        task = Bukkit.getScheduler().runTaskTimer(plugin, Runnable {
+            hpByPlayer.keys.toList().forEach { uuid ->
+                val player = Bukkit.getPlayer(uuid) ?: return@forEach
+                val hp = hpByPlayer[uuid] ?: return@forEach
+                val display = displays[uuid]
+                if (display == null || !display.isValid) {
                     spawn(player, hp)
-                } else {
-                    keepAttached(display, player)
+                    return@forEach
+                }
+                if (!player.passengers.contains(display)) {
+                    player.addPassenger(display)
                 }
             }
-        }
-
-        ServerPlayConnectionEvents.DISCONNECT.register { handler, _ ->
-            remove(handler.player)
-        }
-
-        ServerPlayerEvents.AFTER_RESPAWN.register { _, newPlayer, _ ->
-            val hp = hpByPlayer[newPlayer.uuid] ?: return@register
-            spawn(newPlayer, hp)
-        }
-
-        ServerLifecycleEvents.SERVER_STOPPING.register { server ->
-            server.playerManager.playerList.forEach { remove(it) }
-            hpByPlayer.clear()
-            displayByPlayer.clear()
-        }
-
-        ServerLifecycleEvents.SERVER_STARTED.register { server ->
-            server.worlds.forEach { world ->
-                world.iterateEntities().forEach { entity ->
-                    if (entity.commandTags.contains(TAG)) {
-                        entity.discard()
-                    }
-                }
-            }
-        }
+        }, 1L, 1L)
     }
 
-    fun spawnOrUpdate(player: ServerPlayerEntity, hp: String) {
-        hpByPlayer[player.uuid] = hp
+    fun stop() {
+        task?.cancel()
+        task = null
+        displays.values.forEach { if (it.isValid) it.remove() }
+        displays.clear()
+        hpByPlayer.clear()
+    }
+
+    fun spawnOrUpdate(player: Player, hp: String) {
+        hpByPlayer[player.uniqueId] = hp
         spawn(player, hp)
     }
 
-    fun remove(player: ServerPlayerEntity) {
-        hpByPlayer.remove(player.uuid)
-        discardTracked(player)
+    fun remove(player: Player) {
+        hpByPlayer.remove(player.uniqueId)
+        displays.remove(player.uniqueId)?.let { if (it.isValid) it.remove() }
     }
 
-    private fun spawn(player: ServerPlayerEntity, hp: String) {
-        discardTracked(player)
+    private fun spawn(player: Player, hp: String) {
+        displays.remove(player.uniqueId)?.let { if (it.isValid) it.remove() }
 
-        val world = player.serverWorld
-        val display = EntityType.TEXT_DISPLAY.create(world) ?: return
-
-        display.refreshPositionAndAngles(player.x, player.y + player.height, player.z, 0f, 0f)
-        display.setText(
-            Text.literal("$hp ").setStyle(
-                Style.EMPTY.withItalic(false).withColor(Formatting.WHITE)
-            ).append(TextStyles.named("❤", Formatting.RED))
-        )
-        display.setBillboardMode(DisplayEntity.BillboardMode.CENTER)
-        display.setBackground(0)
-        display.setShadowRadius(0f)
-        display.setTeleportDuration(0)
-        display.setTransformation(
-            AffineTransformation(
-                Vector3f(0f, -0.4f, 0f),
-                Quaternionf(),
-                Vector3f(1f, 1f, 1f),
-                Quaternionf(),
+        val display = player.world.spawn(player.location, TextDisplay::class.java) { ent ->
+            ent.text(
+                Component.text("$hp ").color(NamedTextColor.WHITE)
+                    .append(Component.text("❤", NamedTextColor.RED))
             )
-        )
-        display.isInvulnerable = true
-        display.setNoGravity(true)
-        display.noClip = true
-        display.addCommandTag(TAG)
-
-        world.spawnEntity(display)
-        displayByPlayer[player.uuid] = display.uuid
-        keepAttached(display, player)
-    }
-
-    /**
-     * TextDisplay is mounted as a passenger so it cannot be left behind
-     * at the command location. If riding is rejected (vehicle, sleep),
-     * teleport every tick as a fallback.
-     */
-    private fun keepAttached(display: DisplayEntity.TextDisplayEntity, player: ServerPlayerEntity) {
-        if (display.vehicle != player) {
-            display.startRiding(player, true)
+            ent.billboard = Display.Billboard.CENTER
+            ent.backgroundColor = Color.fromARGB(0, 0, 0, 0)
+            ent.isShadowed = false
+            ent.teleportDuration = 0
+            val trans = ent.transformation
+            trans.translation.set(0f, -0.4f, 0f)
+            ent.transformation = trans
         }
-        if (display.vehicle == player) {
-            return
-        }
-        val y = player.y + player.height + 0.15
-        if (display.world.registryKey != player.serverWorld.registryKey) {
-            display.discard()
-            spawn(player, hpByPlayer[player.uuid] ?: return)
-            return
-        }
-        display.requestTeleport(player.x, y, player.z)
-        display.refreshPositionAndAngles(player.x, y, player.z, 0f, 0f)
+        player.addPassenger(display)
+        displays[player.uniqueId] = display
     }
 
-    private fun displayOf(player: ServerPlayerEntity): DisplayEntity.TextDisplayEntity? {
-        player.passengerList
-            .filterIsInstance<DisplayEntity.TextDisplayEntity>()
-            .firstOrNull { TAG in it.commandTags }
-            ?.let { return it }
-
-        val id = displayByPlayer[player.uuid] ?: return null
-        return findEntity(player.server, id)
+    @EventHandler
+    fun onQuit(event: PlayerQuitEvent) {
+        remove(event.player)
     }
 
-    private fun discardTracked(player: ServerPlayerEntity) {
-        player.passengerList
-            .filterIsInstance<DisplayEntity.TextDisplayEntity>()
-            .filter { TAG in it.commandTags }
-            .forEach { it.discard() }
-
-        val id = displayByPlayer.remove(player.uuid) ?: return
-        findEntity(player.server, id)?.discard()
-    }
-
-    private fun findEntity(server: MinecraftServer, id: UUID): DisplayEntity.TextDisplayEntity? {
-        server.worlds.forEach { world ->
-            val entity = world.getEntity(id)
-            if (entity is DisplayEntity.TextDisplayEntity) {
-                return entity
+    @EventHandler
+    fun onRespawn(event: PlayerRespawnEvent) {
+        val hp = hpByPlayer[event.player.uniqueId] ?: return
+        val plugin = plugin ?: return
+        Bukkit.getScheduler().runTaskLater(plugin, Runnable {
+            if (event.player.isOnline) {
+                spawn(event.player, hp)
             }
-        }
-        return null
+        }, 1L)
     }
 }

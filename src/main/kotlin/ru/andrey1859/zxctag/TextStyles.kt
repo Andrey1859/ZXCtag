@@ -1,32 +1,28 @@
 package ru.andrey1859.zxctag
 
-import net.minecraft.text.MutableText
-import net.minecraft.text.Style
-import net.minecraft.text.Text
-import net.minecraft.text.TextColor
-import net.minecraft.util.Formatting
+import net.kyori.adventure.text.Component
+import net.kyori.adventure.text.format.NamedTextColor
+import net.kyori.adventure.text.format.TextColor
+import net.kyori.adventure.text.format.TextDecoration
 
 object TextStyles {
     /**
-     * Nametags inherit italic from the vanilla renderer. Every sibling must
-     * explicitly disable italic, otherwise colours after the first component
-     * get flattened and brackets/level stay uncoloured.
+     * Nametags inherit italic. Every sibling must disable it, otherwise
+     * colours after the first component get flattened.
      */
-    fun named(content: String, color: Formatting, bold: Boolean = false): MutableText {
-        return Text.literal(content).setStyle(
-            Style.EMPTY
-                .withColor(color)
-                .withBold(bold)
-                .withItalic(false)
-        )
+    fun named(content: String, color: NamedTextColor, bold: Boolean = false): Component {
+        return Component.text(content).style { style ->
+            style.color(color)
+                .decoration(TextDecoration.ITALIC, false)
+                .decoration(TextDecoration.BOLD, bold)
+        }
     }
 
-    fun rgb(content: String, color: Int, bold: Boolean = false): MutableText {
-        return Text.literal(content).setStyle(
-            Style.EMPTY
-                .withColor(TextColor.fromRgb(color))
-                .withBold(bold)
-                .withItalic(false)
-        )
+    fun rgb(content: String, color: Int, bold: Boolean = false): Component {
+        return Component.text(content).style { style ->
+            style.color(TextColor.color(color))
+                .decoration(TextDecoration.ITALIC, false)
+                .decoration(TextDecoration.BOLD, bold)
+        }
     }
 }

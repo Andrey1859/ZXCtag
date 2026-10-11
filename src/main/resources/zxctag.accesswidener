@@ -1,8 +1,0 @@
-accessWidener v2 named
-
-accessible method net/minecraft/entity/decoration/DisplayEntity setBillboardMode (Lnet/minecraft/entity/decoration/DisplayEntity$BillboardMode;)V
-accessible method net/minecraft/entity/decoration/DisplayEntity setTransformation (Lnet/minecraft/util/math/AffineTransformation;)V
-accessible method net/minecraft/entity/decoration/DisplayEntity setTeleportDuration (I)V
-accessible method net/minecraft/entity/decoration/DisplayEntity setShadowRadius (F)V
-accessible method net/minecraft/entity/decoration/DisplayEntity$TextDisplayEntity setText (Lnet/minecraft/text/Text;)V
-accessible method net/minecraft/entity/decoration/DisplayEntity$TextDisplayEntity setBackground (I)V

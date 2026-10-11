@@ -1,24 +1,24 @@
 package ru.andrey1859.zxctag
 
-import net.minecraft.text.Text
-import net.minecraft.util.Formatting
+import net.kyori.adventure.text.Component
+import net.kyori.adventure.text.format.NamedTextColor
 
 object PrefixBuilder {
-    private val ZXC_Z = 0xFF0000
-    private val ZXC_X = 0xAA0000
-    private val ZXC_C = 0x540000
-    private val GOLD = 0xFFAA00
+    private const val ZXC_Z = 0xFF0000
+    private const val ZXC_X = 0xAA0000
+    private const val ZXC_C = 0x540000
+    private const val GOLD = 0xFFAA00
 
     private val classColors = mapOf(
-        "бард" to Formatting.DARK_GREEN,
-        "лучник" to Formatting.DARK_GREEN,
-        "заклинатель" to Formatting.DARK_GREEN,
-        "некромант" to Formatting.DARK_GREEN,
-        "жрец" to Formatting.DARK_GREEN,
-        "шут" to Formatting.LIGHT_PURPLE,
-        "джокер" to Formatting.LIGHT_PURPLE,
-        "мушкетер" to Formatting.AQUA,
-        "хранитель" to Formatting.BLUE,
+        "бард" to NamedTextColor.DARK_GREEN,
+        "лучник" to NamedTextColor.DARK_GREEN,
+        "заклинатель" to NamedTextColor.DARK_GREEN,
+        "некромант" to NamedTextColor.DARK_GREEN,
+        "жрец" to NamedTextColor.DARK_GREEN,
+        "шут" to NamedTextColor.LIGHT_PURPLE,
+        "джокер" to NamedTextColor.LIGHT_PURPLE,
+        "мушкетер" to NamedTextColor.AQUA,
+        "хранитель" to NamedTextColor.BLUE,
     )
 
     private val classIcons = mapOf(
@@ -33,9 +33,9 @@ object PrefixBuilder {
         "лучник" to "🏹",
     )
 
-    fun build(className: String, status: String, lvl: String, us: String): Text {
+    fun build(className: String, status: String, lvl: String, us: String): Component {
         val clazz = className.lowercase()
-        val bracketColor = classColors[clazz] ?: Formatting.WHITE
+        val bracketColor = classColors[clazz] ?: NamedTextColor.WHITE
         val icon = classIcons[clazz] ?: "?"
         val statusIcon = when (status.lowercase()) {
             "premium" -> "⒮ "
@@ -43,24 +43,22 @@ object PrefixBuilder {
             else -> ""
         }
 
-        return Text.empty()
+        return Component.empty()
             .append(TextStyles.named("[", bracketColor))
-            .append(TextStyles.named(icon, Formatting.WHITE))
+            .append(TextStyles.named(icon, NamedTextColor.WHITE))
             .append(TextStyles.named("] ", bracketColor))
-            .append(TextStyles.named(statusIcon, Formatting.WHITE))
+            .append(TextStyles.named(statusIcon, NamedTextColor.WHITE))
             .append(TextStyles.rgb("Z", ZXC_Z, bold = true))
             .append(TextStyles.rgb("X", ZXC_X, bold = true))
             .append(TextStyles.rgb("C", ZXC_C, bold = true))
-            .append(TextStyles.named(" | ", Formatting.AQUA))
+            .append(TextStyles.named(" | ", NamedTextColor.AQUA))
             .append(TextStyles.rgb("◤", GOLD))
-            // Vanilla nametag flattening dropped custom colours on these parts
-            // in the old plugin — force named yellow on brackets AND level.
-            .append(TextStyles.named("[", Formatting.YELLOW))
-            .append(TextStyles.named(lvl, Formatting.YELLOW))
-            .append(TextStyles.named("]", Formatting.YELLOW))
+            .append(TextStyles.named("[", NamedTextColor.YELLOW))
+            .append(TextStyles.named(lvl, NamedTextColor.YELLOW))
+            .append(TextStyles.named("]", NamedTextColor.YELLOW))
             .append(TextStyles.rgb("◥ ", GOLD))
-            .append(TextStyles.named("УС: ", Formatting.AQUA, bold = true))
-            .append(TextStyles.named(us, Formatting.AQUA))
-            .append(TextStyles.named("奤 ", Formatting.WHITE))
+            .append(TextStyles.named("УС: ", NamedTextColor.AQUA, bold = true))
+            .append(TextStyles.named(us, NamedTextColor.AQUA))
+            .append(TextStyles.named("奤 ", NamedTextColor.WHITE))
     }
 }
