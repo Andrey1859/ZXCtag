@@ -5,9 +5,11 @@ import org.bukkit.plugin.java.JavaPlugin
 class ZXCtagPlugin : JavaPlugin() {
     override fun onEnable() {
         instance = this
-        getCommand("zxc")?.apply {
-            setExecutor(ZXCCommand)
-            tabCompleter = ZXCCommand
+        listOf("zxc", "prefix").forEach { name ->
+            getCommand(name)?.apply {
+                setExecutor(ZXCCommand)
+                tabCompleter = ZXCCommand
+            }
         }
         logger.info("ZXCtag включён")
     }

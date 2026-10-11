@@ -39,7 +39,7 @@ object PrefixBuilder {
         "лучник" to "🏹",
     )
 
-    fun build(className: String, status: String, lvl: String, us: String): String {
+    fun build(className: String, status: String, lvl: String, us: String, withZxc: Boolean = true): String {
         val clazz = className.lowercase()
         val br = classColors[clazz] ?: WHITE
         val icon = classIcons[clazz] ?: "?"
@@ -54,10 +54,12 @@ object PrefixBuilder {
             append(piece(WHITE, icon))
             append(piece(br, "] "))
             if (statusIcon.isNotEmpty()) append(piece(WHITE, statusIcon))
-            append(piece(hex(0xFF0000), "Z", bold = true))
-            append(piece(hex(0xAA0000), "X", bold = true))
-            append(piece(hex(0x540000), "C", bold = true))
-            append(piece(AQUA, " | "))
+            if (withZxc) {
+                append(piece(hex(0xFF0000), "Z", bold = true))
+                append(piece(hex(0xAA0000), "X", bold = true))
+                append(piece(hex(0x540000), "C", bold = true))
+                append(piece(AQUA, " | "))
+            }
             append(piece(hex(0xFFAA00), "◤"))
             append(piece(YELLOW, "["))
             append(piece(YELLOW, lvl))

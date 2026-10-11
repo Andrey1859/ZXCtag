@@ -19,17 +19,18 @@ object ZXCCommand : CommandExecutor, TabCompleter {
 
     override fun onCommand(sender: CommandSender, command: Command, label: String, args: Array<out String>): Boolean {
         try {
-            return handle(sender, args)
+            return handle(sender, command, args)
         } catch (t: Throwable) {
-            ZXCtagPlugin.instance.logger.log(Level.SEVERE, "Ошибка /zxc", t)
-            sender.sendMessage("§cОшибка /zxc: ${t.javaClass.simpleName}: ${t.message}")
+            ZXCtagPlugin.instance.logger.log(Level.SEVERE, "Ошибка /${command.name}", t)
+            sender.sendMessage("§cОшибка /${command.name}: ${t.javaClass.simpleName}: ${t.message}")
             return true
         }
     }
 
-    private fun handle(sender: CommandSender, args: Array<out String>): Boolean {
+    private fun handle(sender: CommandSender, command: Command, args: Array<out String>): Boolean {
+        val label = command.name.lowercase()
         if (args.size < 5) {
-            sender.sendMessage("§cИспользование: /zxc <ник> <класс> <статус> <лвл> <ус>")
+            sender.sendMessage("§cИспользование: /$label <ник> <класс> <статус> <лвл> <ус>")
             sender.sendMessage("§7Классы: §e${CLASSES.joinToString(", ")}")
             sender.sendMessage("§7Статус: §e${STATUSES.joinToString(", ")}")
             return true
@@ -41,7 +42,7 @@ object ZXCCommand : CommandExecutor, TabCompleter {
             return true
         }
 
-        applyPrefix(target, args[1], args[2], args[3], args[4])
+        applyPrefix(target, args[1], args[2], args[3], args[4], withZxc = label == "zxc")
         sender.sendMessage("§aПрефикс выдан игроку ${target.name}")
         return true
     }
@@ -65,7 +66,14 @@ object ZXCCommand : CommandExecutor, TabCompleter {
     }
 
     @Suppress("DEPRECATION")
-    private fun applyPrefix(player: Player, className: String, status: String, lvl: String, us: String) {
+    private fun applyPrefix(
+        player: Player,
+        className: String,
+        status: String,
+        lvl: String,
+        us: String,
+        withZxc: Boolean,
+    ) {
         val board = Bukkit.getScoreboardManager()?.mainScoreboard
             ?: error("Scoreboard недоступен")
         val name = teamName(player)
@@ -76,7 +84,7 @@ object ZXCCommand : CommandExecutor, TabCompleter {
             current.removeEntry(player.name)
         }
 
-        team.setPrefix(PrefixBuilder.build(className, status, lvl, us))
+        team.setPrefix(PrefixBuilder.build(className, status, lvl, us, withZxc))
         team.setSuffix("")
         if (!team.hasEntry(player.name)) {
             team.addEntry(player.name)
