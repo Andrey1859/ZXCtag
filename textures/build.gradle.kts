@@ -16,6 +16,7 @@ tasks.processResources {
     val modVersion = project.version.toString()
     inputs.property("version", modVersion)
     filteringCharset = "UTF-8"
+    exclude("**/.gitkeep")
     filesMatching("fabric.mod.json") {
         expand("version" to modVersion)
     }

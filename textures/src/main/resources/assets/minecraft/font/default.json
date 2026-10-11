@@ -1,0 +1,13 @@
+{
+  "providers": [
+    {
+      "_symbol": "奤  U+5964",
+      "_note": "ВПИШИ ИМЯ КАРТИНКИ В file -> zxctextures:font/ИМЯ.png",
+      "type": "bitmap",
+      "chars": ["\u5964"],
+      "file": "",
+      "height": 8,
+      "ascent": 7
+    }
+  ]
+}
