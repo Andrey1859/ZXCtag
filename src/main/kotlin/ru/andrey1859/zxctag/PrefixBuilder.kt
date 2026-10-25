@@ -8,6 +8,9 @@ package ru.andrey1859.zxctag
  * Level brackets and the level itself are §e (yellow).
  */
 object PrefixBuilder {
+    /** U+E001 is supplied by the client-side ZXC Textures font as the bow icon. */
+    private const val PREFIX_ICON = "\uE001"
+
     private const val DARK_GREEN = "§2"
     private const val LIGHT_PURPLE = "§d"
     private const val AQUA = "§b"
@@ -50,6 +53,7 @@ object PrefixBuilder {
         }
 
         return buildString {
+            append(piece(WHITE, PREFIX_ICON))
             append(piece(br, "["))
             append(piece(WHITE, icon))
             append(piece(br, "] "))

@@ -3,7 +3,7 @@ version: ${version}
 main: ru.andrey1859.zxctag.ZXCtagPlugin
 api-version: "1.21"
 author: Andrey1859
-description: Префикс класса и жёлтый уровень
+description: Префиксы игроков и NPC со скином Mojang
 commands:
   zxc:
     description: Выдать префикс с ZXC, класс и уровень
@@ -13,10 +13,24 @@ commands:
     description: Выдать префикс без ZXC
     usage: /prefix <ник> <класс> <статус> <лвл> <ус>
     permission: zxctag.prefix
+  spawnnpc:
+    description: Создать NPC со скином Java-игрока
+    usage: /spawnnpc <имя_NPC> <ник_скина> <класс> <статус> <лвл> <ус>
+    permission: zxctag.spawnnpc
+  npcitem:
+    description: Передать предмет из руки ближайшему NPC
+    usage: /npcitem [main|off] [имя_NPC]
+    permission: zxctag.npcitem
 permissions:
   zxctag.zxc:
     description: Использование /zxc
     default: op
   zxctag.prefix:
     description: Использование /prefix
+    default: op
+  zxctag.spawnnpc:
+    description: Создание NPC
+    default: op
+  zxctag.npcitem:
+    description: Экипировка NPC предметом из руки игрока
     default: op

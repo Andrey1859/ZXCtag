@@ -9,13 +9,13 @@ import org.bukkit.entity.Player
 import java.util.logging.Level
 
 object ZXCCommand : CommandExecutor, TabCompleter {
-    private val CLASSES = listOf(
+    internal val CLASSES = listOf(
         "бард", "лучник", "заклинатель", "некромант", "жрец",
         "шут", "джокер", "мушкетер", "хранитель",
     )
-    private val STATUSES = listOf("none", "premium", "admin")
-    private val LEVELS = listOf("1", "5", "10", "20", "30", "50", "100")
-    private val US_VALUES = listOf("0", "1", "5", "10", "20")
+    internal val STATUSES = listOf("none", "premium", "admin")
+    internal val LEVELS = listOf("1", "5", "10", "20", "30", "50", "100")
+    internal val US_VALUES = listOf("0", "1", "5", "10", "20")
 
     override fun onCommand(sender: CommandSender, command: Command, label: String, args: Array<out String>): Boolean {
         try {
