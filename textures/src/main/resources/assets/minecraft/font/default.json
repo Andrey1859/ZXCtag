@@ -99,6 +99,15 @@
       "file": "",
       "height": 8,
       "ascent": 7
+    },
+    {
+      "_symbol": "Лук  U+E001",
+      "_note": "Пиксельная иконка лука; этот символ выводит плагин ZXCtag.",
+      "type": "bitmap",
+      "chars": ["\ue001"],
+      "file": "zxctextures:font/bow.png",
+      "height": 8,
+      "ascent": 7
     }
   ]
 }
