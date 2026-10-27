@@ -1,0 +1,15 @@
+name: NpcSkin
+version: 1.0.0
+main: ru.andrey1859.npcskin.NpcPlugin
+api-version: '21'
+author: andrey1859
+description: Creates immobile player-skin NPCs
+commands:
+  npc:
+    description: Create a skin NPC or remove all NPCs
+    usage: /npc <nick> | /npc clear
+    permission: npc.use
+permissions:
+  npc.use:
+    description: Use the /npc command
+    default: op
