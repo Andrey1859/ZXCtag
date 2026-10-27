@@ -1,8 +1,10 @@
 package ru.andrey1859.zxctag
 
 import org.bukkit.plugin.java.JavaPlugin
+import ru.andrey1859.zxctag.npc.MojangSkinService
 import ru.andrey1859.zxctag.npc.NpcCommand
 import ru.andrey1859.zxctag.npc.NpcManager
+import ru.andrey1859.zxctag.npc.NpcPackets
 
 class ZXCtagPlugin : JavaPlugin() {
     private lateinit var npcManager: NpcManager
@@ -16,7 +18,8 @@ class ZXCtagPlugin : JavaPlugin() {
             }
         }
 
-        npcManager = NpcManager(this)
+        val skinService = MojangSkinService()
+        npcManager = NpcManager(this, NpcPackets(this), skinService)
         server.pluginManager.registerEvents(npcManager, this)
         val npcCommand = NpcCommand(this, npcManager)
         server.pluginManager.registerEvents(npcCommand, this)
