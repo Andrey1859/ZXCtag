@@ -100,6 +100,7 @@ internal class NpcCommand(
         if (args.size != 6) {
             sender.sendMessage("§eИспользование: /spawnnpc <имя_NPC> <ник_скина> <класс> <статус> <лвл> <ус>")
             sender.sendMessage("§7Пример: /spawnnpc Guard Notch лучник premium 50 10")
+            sender.sendMessage("§7Уровень и УС — любые значения, например 1234.5.")
             return true
         }
 
@@ -123,18 +124,11 @@ internal class NpcCommand(
             sender.sendMessage("§cНеизвестный статус. Доступны: §e${ZXCCommand.STATUSES.joinToString(", ")}")
             return true
         }
-        val level = ZXCCommand.LEVELS.firstOrNull { it == args[4] }
-        if (level == null) {
-            sender.sendMessage("§cНеизвестный уровень. Доступны: §e${ZXCCommand.LEVELS.joinToString(", ")}")
-            return true
-        }
-        val us = ZXCCommand.US_VALUES.firstOrNull { it == args[5] }
-        if (us == null) {
-            sender.sendMessage("§cНеизвестное значение УС. Доступны: §e${ZXCCommand.US_VALUES.joinToString(", ")}")
-            return true
-        }
-        if (!manager.reserve(npcName)) {
-            sender.sendMessage("§cИмя $npcName занято NPC, игроком или другой командой табло.")
+        val level = args[4]
+        val us = args[5]
+        val rejection = manager.reserve(npcName)
+        if (rejection != null) {
+            sender.sendMessage("§c$rejection")
             return true
         }
 
@@ -150,7 +144,12 @@ internal class NpcCommand(
 
         plugin.server.scheduler.runTaskAsynchronously(plugin, Runnable {
             try {
-                val skin = skinService.lookup(skinName)
+                val skin = try {
+                    skinService.lookup(skinName)
+                } catch (exception: SkinLookupException) {
+                    plugin.logger.warning("Не удалось получить скин Mojang для «$skinName»: ${exception.message}; используем встроенный скин NPC.")
+                    NpcDefaultSkin.skin
+                }
                 plugin.server.scheduler.runTask(plugin, Runnable {
                     try {
                         val record = NpcRecord(
@@ -171,24 +170,20 @@ internal class NpcCommand(
                             skin = skin,
                         )
                         manager.create(record)
-                        sender.sendMessage("§aNPC $npcName создан со скином $skinName и префиксом $className/$status/$level/$us.")
-                    } catch (exception: Exception) {
+                        sender.sendMessage("§aNPC $npcName создан со скином ${skin.ownerName} и префиксом $className/$status/$level/$us.")
+                    } catch (throwable: Throwable) {
                         manager.release(npcName)
-                        plugin.logger.severe("Не удалось создать NPC $npcName: ${exception.message}")
-                        plugin.logger.fine(exception.stackTraceToString())
-                        sender.sendMessage("§cНе удалось создать NPC: ${exception.message ?: "ошибка сервера"}")
+                        plugin.logger.severe("Не удалось создать NPC $npcName: ${throwable.message}")
+                        plugin.logger.warning(throwable.stackTraceToString())
+                        sender.sendMessage("§cНе удалось создать NPC: ${throwable.message ?: "ошибка сервера"}")
                     }
                 })
-            } catch (exception: SkinLookupException) {
+            } catch (throwable: Throwable) {
+                manager.release(npcName)
+                plugin.logger.severe("Не удалось подготовить создание NPC $npcName: ${throwable.message}")
+                plugin.logger.warning(throwable.stackTraceToString())
                 plugin.server.scheduler.runTask(plugin, Runnable {
-                    manager.release(npcName)
-                    sender.sendMessage("§c${exception.message}")
-                })
-            } catch (exception: Exception) {
-                plugin.logger.warning("Ошибка запроса скина $skinName: ${exception.message}")
-                plugin.server.scheduler.runTask(plugin, Runnable {
-                    manager.release(npcName)
-                    sender.sendMessage("§cНе удалось получить скин Mojang; попробуйте позже.")
+                    sender.sendMessage("§cНе удалось создать NPC: ${throwable.message ?: "ошибка сервера"}")
                 })
             }
         })

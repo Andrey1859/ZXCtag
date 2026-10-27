@@ -4,25 +4,30 @@ import org.bukkit.Bukkit
 import org.bukkit.entity.Player
 import org.bukkit.inventory.ItemStack
 import org.bukkit.plugin.java.JavaPlugin
+import ru.andrey1859.zxctag.PrefixBuilder
 import java.lang.reflect.Constructor
 import java.lang.reflect.Field
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
-import java.util.Collections
-import java.util.EnumSet
 import java.util.UUID
-import java.util.function.Consumer
 
 /**
- * Builds a packet-only ServerPlayer for each stored NPC and sends its player-info / spawn packets.
- * No real account or client connection is created for the NPC.
+ * Builds packet-only ServerPlayer entities for NPCs and sends their packets.
+ *
+ * Targets Paper 1.21.4 exactly: constructors and methods are resolved by exact
+ * signature (parameter count + type compatibility), never by guessing. A missing
+ * target fails with the exact class/method name so the server log shows what to fix.
+ *
+ * A ServerPlayer is created with a stub ServerGamePacketListenerImpl so the
+ * ClientboundPlayerInfoUpdatePacket entry can read `connection.latency()` while
+ * being built — the packet-only player has no real network listener.
  */
-internal class NpcServerRenderer(private val plugin: JavaPlugin) {
+internal class NpcPackets(private val plugin: JavaPlugin) {
+
     fun create(record: NpcRecord): RenderedNpc {
         val world = Bukkit.getWorld(record.world)
             ?: throw IllegalStateException("Мир «${record.world}» не загружен")
-        val craftServer = Bukkit.getServer()
-        val minecraftServer = invokeNoArgs(craftServer, "getServer")
+        val minecraftServer = invokeNoArgs(Bukkit.getServer(), "getServer")
             ?: throw IllegalStateException("Не удалось получить MinecraftServer")
         val serverLevel = invokeNoArgs(world, "getHandle")
             ?: throw IllegalStateException("Не удалось получить внутренний мир ${record.world}")
@@ -47,6 +52,7 @@ internal class NpcServerRenderer(private val plugin: JavaPlugin) {
         } ?: throw IllegalStateException("Внутренний конструктор ServerPlayer не найден")
 
         val npcPlayer = instantiate(constructor, minecraftServer, serverLevel, gameProfile, clientInformation)
+        attachStubConnection(npcPlayer, minecraftServer, gameProfile)
         setPlayerTransform(npcPlayer, record)
         val entityId = (invokeNoArgs(npcPlayer, "getId") as? Number)?.toInt()
             ?: throw IllegalStateException("Не удалось получить ID сущности NPC")
@@ -56,20 +62,12 @@ internal class NpcServerRenderer(private val plugin: JavaPlugin) {
 
     fun showTo(viewer: Player, npc: RenderedNpc) {
         val viewerHandle = playerHandle(viewer)
-        sendPacket(viewerHandle, createPlayerInfoUpdatePacket(npc.handle, "ADD_PLAYER"))
+        sendPacket(viewerHandle, createPlayerInfoUpdatePacket(npc.handle))
         sendPacket(viewerHandle, createAddEntityPacket(npc.handle))
         createEntityDataPacket(npc.handle)?.let { sendPacket(viewerHandle, it) }
         createHeadRotationPacket(npc.handle)?.let { sendPacket(viewerHandle, it) }
         createEquipmentPacket(npc.entityId, npc.record.mainHandItem, npc.record.offHandItem)
             ?.let { sendPacket(viewerHandle, it) }
-
-        plugin.server.scheduler.runTaskLater(plugin, Runnable {
-            if (viewer.isOnline) {
-                runCatching {
-                    sendPacket(playerHandle(viewer), createPlayerInfoRemovePacket(npc.profileId))
-                }.onFailure { plugin.logger.fine("Не удалось убрать NPC из списка игроков: ${it.message}") }
-            }
-        }, PLAYER_INFO_REMOVE_DELAY_TICKS)
     }
 
     fun hideFrom(viewer: Player, npc: RenderedNpc) {
@@ -84,10 +82,13 @@ internal class NpcServerRenderer(private val plugin: JavaPlugin) {
     }
 
     private fun setPlayerTransform(npc: Any, record: NpcRecord) {
-        invokeCompatible(npc, "setPos", record.x, record.y, record.z)
-        invokeCompatible(npc, "setYRot", record.bodyYaw)
-        invokeCompatible(npc, "setXRot", record.pitch)
-        invokeCompatible(npc, "setYHeadRot", record.headYaw)
+        invokeMethod(npc, "setPos", record.x, record.y, record.z)
+        invokeMethod(npc, "setYRot", record.bodyYaw)
+        invokeMethod(npc, "setXRot", record.pitch)
+        invokeMethod(npc, "setYHeadRot", record.headYaw)
+        invokeMethod(npc, "setYBodyRot", record.bodyYaw)
+        setFloatField(npc, "yRotO", record.bodyYaw)
+        setFloatField(npc, "xRotO", record.pitch)
         setFloatField(npc, "yBodyRot", record.bodyYaw)
         setFloatField(npc, "yBodyRotO", record.bodyYaw)
         setFloatField(npc, "yHeadRot", record.headYaw)
@@ -97,16 +98,54 @@ internal class NpcServerRenderer(private val plugin: JavaPlugin) {
         val pose = poseClass.enumConstants
             ?.firstOrNull { (it as? Enum<*>)?.name == record.pose.name }
             ?: throw IllegalStateException("Неподдерживаемая поза NPC: ${record.pose}")
-        invokeCompatible(npc, "setPose", pose)
+        invokeMethod(npc, "setPose", pose)
 
-        // Pose is tracked separately from the player crouch/swim/fall-flying flags on some clients.
-        runCatching { invokeCompatible(npc, "setShiftKeyDown", record.pose == NpcPose.CROUCHING) }
-        if (record.pose == NpcPose.SWIMMING) {
-            runCatching { invokeCompatible(npc, "setSwimming", true) }
-        }
-        if (record.pose == NpcPose.FALL_FLYING) {
-            runCatching { invokeCompatible(npc, "setSharedFlag", 7, true) }
-        }
+        if (record.pose == NpcPose.CROUCHING) invokeMethod(npc, "setShiftKeyDown", true)
+        if (record.pose == NpcPose.SWIMMING) invokeMethod(npc, "setSwimming", true)
+        if (record.pose == NpcPose.FALL_FLYING) invokeMethod(npc, "setSharedFlag", 7, true)
+
+        // The full tag (brand, icons, level, УС) goes on the name tag above the NPC's head.
+        val componentClass = nmsClass("net.minecraft.network.chat.Component")
+        val literal = componentClass.methods.firstOrNull { method ->
+            method.name == "literal" && method.parameterCount == 1 &&
+                method.parameterTypes[0] == String::class.java
+        } ?: throw IllegalStateException("Component.literal(String) не найден")
+        val component = invoke(literal, null, PrefixBuilder.nameTag(record.className, record.status, record.level, record.us, record.name))
+            ?: throw IllegalStateException("Component.literal(String) вернул null")
+        invokeMethod(npc, "setCustomName", component)
+    }
+
+    /**
+     * ClientboundPlayerInfoUpdatePacket's Entry(ServerPlayer) reads connection.latency() while the
+     * packet is built, but a packet-only ServerPlayer never gets a network listener. Constructing a
+     * ServerGamePacketListenerImpl stub assigns player.connection itself, so the ADD_PLAYER packet
+     * serialises cleanly (latency 0) without any real connection being involved.
+     */
+    private fun attachStubConnection(npc: Any, minecraftServer: Any, gameProfile: Any) {
+        val connectionClass = nmsClass("net.minecraft.network.Connection")
+        val packetFlowClass = nmsClass("net.minecraft.network.protocol.PacketFlow")
+        val packetFlow = packetFlowClass.enumConstants
+            ?.firstOrNull { (it as? Enum<*>)?.name == "SERVERBOUND" }
+            ?: throw IllegalStateException("PacketFlow.SERVERBOUND не найден")
+        val connection = connectionClass.getConstructor(packetFlowClass).newInstance(packetFlow)
+
+        val cookieClass = nmsClass("net.minecraft.server.network.CommonListenerCookie")
+        val cookieFactory = cookieClass.getMethod(
+            "createInitial",
+            gameProfile.javaClass,
+            java.lang.Boolean.TYPE,
+        )
+        val cookie = invoke(cookieFactory, null, gameProfile, false)
+            ?: throw IllegalStateException("CommonListenerCookie.createInitial() вернул null")
+
+        val listenerClass = nmsClass("net.minecraft.server.network.ServerGamePacketListenerImpl")
+        val listenerConstructor = listenerClass.getConstructor(
+            minecraftServer.javaClass,
+            connectionClass,
+            npc.javaClass,
+            cookieClass,
+        )
+        instantiate(listenerConstructor, minecraftServer, connection, npc, cookie)
     }
 
     private fun addSignedSkinProperty(profile: Any, skin: MojangSkin) {
@@ -119,7 +158,7 @@ internal class NpcServerRenderer(private val plugin: JavaPlugin) {
         val property = constructor.newInstance("textures", skin.textureValue, skin.textureSignature)
         val properties = invokeNoArgs(profile, "getProperties")
             ?: throw IllegalStateException("GameProfile не предоставляет коллекцию свойств")
-        val put = allMethods(properties.javaClass).firstOrNull { method ->
+        val put = properties.javaClass.methods.firstOrNull { method ->
             method.name == "put" && method.parameterCount == 2 &&
                 method.parameterTypes[0].isAssignableFrom(String::class.java) &&
                 method.parameterTypes[1].isInstance(property)
@@ -129,233 +168,66 @@ internal class NpcServerRenderer(private val plugin: JavaPlugin) {
 
     private fun createDefaultClientInformation(type: Class<*>): Any {
         val factory = type.methods.firstOrNull { it.name == "createDefault" && it.parameterCount == 0 }
-        if (factory != null) return invoke(factory, null)
+        if (factory != null) {
+            return invoke(factory, null)
+                ?: throw IllegalStateException("ClientInformation.createDefault() вернул null")
+        }
         throw IllegalStateException("ClientInformation.createDefault() не найден")
     }
 
-    private fun createPlayerInfoUpdatePacket(npc: Any, actionName: String): Any {
+    /** Same action set vanilla sends in ClientboundPlayerInfoUpdatePacket.createPlayerInitializing (1.21.4). */
+    private fun createPlayerInfoUpdatePacket(npc: Any): Any {
         val packetClass = nmsClass("net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket")
-        val actionClass = packetClass.declaredClasses.firstOrNull { it.simpleName == "Action" }
-            ?: nmsClass("net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket\$Action")
-        val action = actionClass.enumConstants
-            ?.firstOrNull { (it as? Enum<*>)?.name == actionName }
-            ?: throw IllegalStateException("PlayerInfo action $actionName не найден")
-
-        val candidates = packetClass.declaredConstructors
-            .sortedBy { it.parameterCount }
-            .mapNotNull { constructor ->
-                buildPlayerInfoArguments(constructor.parameterTypes, action, npc)?.let { constructor to it }
-            }
-        val (constructor, arguments) = candidates.firstOrNull()
-            ?: throw IllegalStateException("Конструктор ClientboundPlayerInfoUpdatePacket не найден")
-        return instantiate(constructor, *arguments)
+        val factory = packetClass.methods.firstOrNull { method ->
+            method.name == "createPlayerInitializing" && method.parameterCount == 1 &&
+                method.parameterTypes[0] == Collection::class.java
+        } ?: throw IllegalStateException("ClientboundPlayerInfoUpdatePacket.createPlayerInitializing не найден")
+        return invoke(factory, null, listOf(npc))
+            ?: throw IllegalStateException("createPlayerInitializing вернул null")
     }
 
-    private fun buildPlayerInfoArguments(parameters: Array<Class<*>>, action: Any, npc: Any): Array<Any?>? {
-        val enumSet = createEnumSet(action)
-        val values = arrayOfNulls<Any>(parameters.size)
-        var assignedAction = false
-        var assignedPlayers = false
-
-        for (index in parameters.indices) {
-            val parameter = parameters[index]
-            when {
-                parameter.isInstance(action) -> {
-                    values[index] = action
-                    assignedAction = true
-                }
-                EnumSet::class.java.isAssignableFrom(parameter) -> {
-                    values[index] = enumSet
-                    assignedAction = true
-                }
-                parameter.isInstance(npc) -> {
-                    values[index] = npc
-                    assignedPlayers = true
-                }
-                java.util.Set::class.java.isAssignableFrom(parameter) -> {
-                    values[index] = Collections.singleton(npc)
-                    assignedPlayers = true
-                }
-                java.util.Collection::class.java.isAssignableFrom(parameter) -> {
-                    values[index] = listOf(npc)
-                    assignedPlayers = true
-                }
-                parameter.isArray && parameter.componentType.isInstance(npc) -> {
-                    val array = java.lang.reflect.Array.newInstance(parameter.componentType, 1)
-                    java.lang.reflect.Array.set(array, 0, npc)
-                    values[index] = array
-                    assignedPlayers = true
-                }
-                else -> return null
-            }
-        }
-        return values.takeIf { assignedAction && assignedPlayers }
-    }
-
-    private fun createEnumSet(value: Any): EnumSet<*> {
-        val set = EnumSet::class.java.getMethod("noneOf", Class::class.java).invoke(null, value.javaClass)
-        @Suppress("UNCHECKED_CAST")
-        (set as MutableSet<Any>).add(value)
-        return set as EnumSet<*>
-    }
-
+    /** 1.21.4 ClientboundAddEntityPacket: (int, UUID, double×3, float×2, EntityType, int, Vec3, double). */
     private fun createAddEntityPacket(npc: Any): Any {
         val packetClass = nmsClass("net.minecraft.network.protocol.game.ClientboundAddEntityPacket")
-        val rawPacketConstructor = packetClass.declaredConstructors.firstOrNull { constructor ->
-            val parameters = constructor.parameterTypes
+        val entityTypeClass = nmsClass("net.minecraft.world.entity.EntityType")
+        val vectorClass = nmsClass("net.minecraft.world.phys.Vec3")
+        val constructor = packetClass.declaredConstructors.firstOrNull { candidate ->
+            val parameters = candidate.parameterTypes
             parameters.size == 11 &&
                 parameters[0] == Int::class.javaPrimitiveType &&
                 parameters[1] == UUID::class.java &&
-                parameters.sliceArray(2..4).all { it == Double::class.javaPrimitiveType } &&
+                parameters[2] == Double::class.javaPrimitiveType &&
+                parameters[3] == Double::class.javaPrimitiveType &&
+                parameters[4] == Double::class.javaPrimitiveType &&
                 parameters[5] == Float::class.javaPrimitiveType &&
                 parameters[6] == Float::class.javaPrimitiveType &&
-                parameters[7].name == "net.minecraft.world.entity.EntityType" &&
+                parameters[7] == entityTypeClass &&
                 parameters[8] == Int::class.javaPrimitiveType &&
-                parameters[9].name == "net.minecraft.world.phys.Vec3" &&
+                parameters[9] == vectorClass &&
                 parameters[10] == Double::class.javaPrimitiveType
-        }
-        if (rawPacketConstructor != null) {
-            val args = arrayOf(
-                invokeNoArgs(npc, "getId"),
-                invokeNoArgs(npc, "getUUID"),
-                invokeNoArgs(npc, "getX"),
-                invokeNoArgs(npc, "getY"),
-                invokeNoArgs(npc, "getZ"),
-                invokeNoArgs(npc, "getXRot"),
-                invokeNoArgs(npc, "getYRot"),
-                invokeNoArgs(npc, "getType"),
-                0,
-                invokeNoArgs(npc, "getDeltaMovement"),
-                invokeNoArgs(npc, "getYHeadRot"),
-            )
-            return instantiate(rawPacketConstructor, *args)
-        }
+        } ?: throw IllegalStateException("Конструктор ClientboundAddEntityPacket(11) не найден")
 
-        val constructors = packetClass.declaredConstructors
-            .filter { constructor -> constructor.parameterTypes.any { it.isInstance(npc) } }
-            .sortedBy { it.parameterCount }
-        for (constructor in constructors) {
-            val args = buildAddEntityArguments(constructor, npc) ?: continue
-            runCatching { return instantiate(constructor, *args) }
-        }
-
-        // 1.21.4 uses ServerEntity in the packet constructors instead of the direct field constructor.
-        return createTrackedAddEntityPacket(packetClass, npc)
-    }
-
-    private fun createTrackedAddEntityPacket(packetClass: Class<*>, npc: Any): Any {
-        val serverEntityClass = nmsClass("net.minecraft.server.level.ServerEntity")
-        val level = invokeNoArgs(npc, "serverLevel") ?: invokeNoArgs(npc, "level")
-            ?: throw IllegalStateException("Не удалось получить мир ServerPlayer для spawn-пакета")
-        val tracker = serverEntityClass.declaredConstructors
-            .sortedBy { it.parameterCount }
-            .firstNotNullOfOrNull { constructor ->
-                val args = arrayOfNulls<Any>(constructor.parameterCount)
-                var hasLevel = false
-                var hasEntity = false
-                var hasReceiver = false
-                var supported = true
-                for (index in constructor.parameterTypes.indices) {
-                    val parameter = constructor.parameterTypes[index]
-                    when {
-                        parameter.isInstance(level) -> {
-                            args[index] = level
-                            hasLevel = true
-                        }
-                        parameter.isInstance(npc) -> {
-                            args[index] = npc
-                            hasEntity = true
-                        }
-                        parameter == Int::class.javaPrimitiveType -> args[index] = 0
-                        parameter == Boolean::class.javaPrimitiveType -> args[index] = false
-                        Consumer::class.java.isAssignableFrom(parameter) -> {
-                            args[index] = Consumer<Any> { _ -> }
-                            hasReceiver = true
-                        }
-                        else -> supported = false
-                    }
-                }
-                if (!supported || !hasLevel || !hasEntity || !hasReceiver) null
-                else runCatching { instantiate(constructor, *args) }.getOrNull()
-            } ?: throw IllegalStateException("Конструктор ServerEntity не найден")
-
-        val packetConstructor = packetClass.declaredConstructors
-            .sortedBy { it.parameterCount }
-            .firstNotNullOfOrNull { constructor ->
-                val args = arrayOfNulls<Any>(constructor.parameterCount)
-                var hasEntity = false
-                var hasTracker = false
-                var supported = true
-                for (index in constructor.parameterTypes.indices) {
-                    val parameter = constructor.parameterTypes[index]
-                    when {
-                        parameter.isInstance(npc) -> {
-                            args[index] = npc
-                            hasEntity = true
-                        }
-                        parameter.isInstance(tracker) -> {
-                            args[index] = tracker
-                            hasTracker = true
-                        }
-                        parameter == Int::class.javaPrimitiveType -> args[index] = 0
-                        else -> supported = false
-                    }
-                }
-                if (!supported || !hasEntity || !hasTracker) null
-                else runCatching { instantiate(constructor, *args) }.getOrNull()
-            }
-        return packetConstructor ?: throw IllegalStateException("Конструктор ClientboundAddEntityPacket не найден")
-    }
-
-    private fun buildAddEntityArguments(constructor: Constructor<*>, npc: Any): Array<Any?>? {
-        val position = doubleArrayOf(
-            number(invokeNoArgs(npc, "getX")),
-            number(invokeNoArgs(npc, "getY")),
-            number(invokeNoArgs(npc, "getZ")),
+        val args = arrayOf(
+            invokeNoArgs(npc, "getId"),
+            invokeNoArgs(npc, "getUUID"),
+            invokeNoArgs(npc, "getX"),
+            invokeNoArgs(npc, "getY"),
+            invokeNoArgs(npc, "getZ"),
+            invokeNoArgs(npc, "getXRot"),
+            invokeNoArgs(npc, "getYRot"),
+            invokeNoArgs(npc, "getType"),
+            0,
+            invokeNoArgs(npc, "getDeltaMovement"),
+            invokeNoArgs(npc, "getYHeadRot"),
         )
-        val rotations = floatArrayOf(
-            number(invokeNoArgs(npc, "getXRot")).toFloat(),
-            number(invokeNoArgs(npc, "getYRot")).toFloat(),
-        )
-        val args = arrayOfNulls<Any>(constructor.parameterCount)
-        var positionIndex = 0
-        var rotationIndex = 0
-
-        for (index in constructor.parameterTypes.indices) {
-            val parameter = constructor.parameterTypes[index]
-            when {
-                parameter.isInstance(npc) -> args[index] = npc
-                parameter == Int::class.javaPrimitiveType || parameter == Int::class.javaObjectType -> args[index] = 0
-                parameter == Double::class.javaPrimitiveType -> {
-                    if (positionIndex >= position.size) return null
-                    args[index] = position[positionIndex++]
-                }
-                parameter == Float::class.javaPrimitiveType -> {
-                    if (rotationIndex >= rotations.size) return null
-                    args[index] = rotations[rotationIndex++]
-                }
-                parameter == UUID::class.java -> args[index] = invokeNoArgs(npc, "getUUID")
-                parameter.name == "net.minecraft.world.phys.Vec3" -> args[index] = invokeNoArgs(npc, "getDeltaMovement")
-                parameter.name == "net.minecraft.core.BlockPos" -> args[index] = createBlockPosition(position)
-                parameter.name == "net.minecraft.world.entity.EntityType" -> args[index] = invokeNoArgs(npc, "getType")
-                else -> return null
-            }
-        }
-        return args
-    }
-
-    private fun createBlockPosition(position: DoubleArray): Any? {
-        val type = nmsClass("net.minecraft.core.BlockPos")
-        val factory = type.methods.firstOrNull { method ->
-            method.name == "containing" && method.parameterCount == 3 &&
-                method.parameterTypes.all { it == Double::class.javaPrimitiveType }
-        }
-        return factory?.let { invoke(it, null, position[0], position[1], position[2]) }
+        return instantiate(constructor, *args)
     }
 
     private fun createEntityDataPacket(npc: Any): Any? {
         val data = invokeNoArgs(npc, "getEntityData") ?: return null
-        val packed = invokeNoArgs(data, "packAll") as? List<*> ?: return null
+        // 1.21.4 has no packAll(); the spawn packet carries non-default values
+        // (custom name, non-standing pose).
+        val packed = invokeNoArgs(data, "getNonDefaultValues") as? List<*> ?: return null
         val entityId = number(invokeNoArgs(npc, "getId")).toInt()
         val packetClass = nmsClass("net.minecraft.network.protocol.game.ClientboundSetEntityDataPacket")
         val constructor = packetClass.declaredConstructors.firstOrNull { candidate ->
@@ -412,7 +284,7 @@ internal class NpcServerRenderer(private val plugin: JavaPlugin) {
 
     private fun toNmsItemStack(item: ItemStack): Any {
         val craftItemStack = nmsClass("org.bukkit.craftbukkit.inventory.CraftItemStack")
-        val converter = allMethods(craftItemStack).firstOrNull { method ->
+        val converter = craftItemStack.methods.firstOrNull { method ->
             method.name == "asNMSCopy" && Modifier.isStatic(method.modifiers) &&
                 method.parameterCount == 1 && method.parameterTypes[0].isAssignableFrom(ItemStack::class.java)
         } ?: throw IllegalStateException("CraftItemStack.asNMSCopy(ItemStack) не найден")
@@ -430,26 +302,17 @@ internal class NpcServerRenderer(private val plugin: JavaPlugin) {
 
     private fun createRemoveEntitiesPacket(entityId: Int): Any {
         val packetClass = nmsClass("net.minecraft.network.protocol.game.ClientboundRemoveEntitiesPacket")
-        val arrayConstructor = packetClass.declaredConstructors.firstOrNull { candidate ->
-            candidate.parameterCount == 1 && candidate.parameterTypes[0].isArray &&
-                candidate.parameterTypes[0].componentType == Int::class.javaPrimitiveType
-        }
-        if (arrayConstructor != null) {
-            val ids = intArrayOf(entityId)
-            return instantiate(arrayConstructor, ids)
-        }
-
-        val singleIdConstructor = packetClass.declaredConstructors.firstOrNull { candidate ->
-            candidate.parameterCount == 1 && candidate.parameterTypes[0] == Int::class.javaPrimitiveType
+        val constructor = packetClass.declaredConstructors.firstOrNull { candidate ->
+            candidate.parameterCount == 1 && candidate.parameterTypes[0] == IntArray::class.java
         } ?: throw IllegalStateException("Конструктор ClientboundRemoveEntitiesPacket не найден")
-        return instantiate(singleIdConstructor, entityId)
+        return instantiate(constructor, intArrayOf(entityId))
     }
 
     private fun sendPacket(viewerHandle: Any, packet: Any) {
         val connection = invokeNoArgs(viewerHandle, "getConnection")
             ?: readField(viewerHandle, "connection")
             ?: throw IllegalStateException("У игрока отсутствует сетевое соединение")
-        val sendMethod = allMethods(connection.javaClass).firstOrNull { method ->
+        val sendMethod = connection.javaClass.methods.firstOrNull { method ->
             method.name == "send" && method.parameterCount == 1 && method.parameterTypes[0].isInstance(packet)
         } ?: throw IllegalStateException("Не найден метод отправки сетевого пакета")
         invoke(sendMethod, connection, packet)
@@ -467,17 +330,34 @@ internal class NpcServerRenderer(private val plugin: JavaPlugin) {
     }
 
     private fun invokeNoArgs(target: Any, name: String): Any? {
-        val method = allMethods(target.javaClass).firstOrNull { it.name == name && it.parameterCount == 0 }
-            ?: return null
+        val method = findMethod(target, name) ?: return null
         return invoke(method, target)
     }
 
-    private fun invokeCompatible(target: Any, name: String, vararg arguments: Any?): Any? {
-        val method = allMethods(target.javaClass).firstOrNull { candidate ->
-            candidate.name == name && candidate.parameterCount == arguments.size &&
-                candidate.parameterTypes.indices.all { index -> compatible(candidate.parameterTypes[index], arguments[index]) }
-        } ?: throw IllegalStateException("Метод ${target.javaClass.name}.$name не найден")
+    /** Finds a method by name and compatible argument types, walking superclasses. */
+    private fun invokeMethod(target: Any, name: String, vararg arguments: Any?): Any? {
+        val method = findMethod(target, name, *arguments)
+            ?: throw IllegalStateException("Метод ${target.javaClass.name}.$name не найден")
         return invoke(method, target, *arguments)
+    }
+
+    private fun findMethod(target: Any, name: String, vararg arguments: Any?): Method? {
+        var type: Class<*>? = target.javaClass
+        while (type != null) {
+            for (method in type.declaredMethods) {
+                if (matches(method, name, arguments)) return method
+            }
+            for (method in type.methods) {
+                if (matches(method, name, arguments)) return method
+            }
+            type = type.superclass
+        }
+        return null
+    }
+
+    private fun matches(method: Method, name: String, arguments: Array<out Any?>): Boolean {
+        if (method.name != name || method.parameterCount != arguments.size) return false
+        return method.parameterTypes.indices.all { index -> compatible(method.parameterTypes[index], arguments[index]) }
     }
 
     private fun compatible(type: Class<*>, value: Any?): Boolean {
@@ -529,19 +409,6 @@ internal class NpcServerRenderer(private val plugin: JavaPlugin) {
         return null
     }
 
-    private fun allMethods(type: Class<*>): List<Method> {
-        val methods = linkedMapOf<String, Method>()
-        var current: Class<*>? = type
-        while (current != null) {
-            current.declaredMethods.forEach { method ->
-                methods.putIfAbsent(method.toGenericString(), method)
-            }
-            current = current.superclass
-        }
-        type.methods.forEach { method -> methods.putIfAbsent(method.toGenericString(), method) }
-        return methods.values.toList()
-    }
-
     private fun invoke(method: Method, target: Any?, vararg arguments: Any?): Any? {
         method.trySetAccessible()
         return method.invoke(target, *arguments)
@@ -561,8 +428,4 @@ internal class NpcServerRenderer(private val plugin: JavaPlugin) {
         val entityId: Int,
         val handle: Any,
     )
-
-    private companion object {
-        const val PLAYER_INFO_REMOVE_DELAY_TICKS = 40L
-    }
 }

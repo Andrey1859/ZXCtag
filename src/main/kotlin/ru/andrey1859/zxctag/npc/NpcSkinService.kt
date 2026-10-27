@@ -27,38 +27,15 @@ internal enum class SkinModel {
 
 internal class SkinLookupException(message: String, cause: Throwable? = null) : RuntimeException(message, cause)
 
-/** Resolves a Java username to its signed Mojang skin property. Calls are made off the server thread. */
+/**
+ * Resolves a Java username to its signed Mojang skin property. Calls are made off the server thread.
+ * Every failure is reported as [SkinLookupException] so async callers can fall back to [NpcDefaultSkin].
+ */
 internal class MojangSkinService {
     private val client = HttpClient.newBuilder()
         .connectTimeout(Duration.ofSeconds(3))
         .followRedirects(HttpClient.Redirect.NEVER)
         .build()
-
-    fun validateStoredSkin(skin: MojangSkin) {
-        if (skin.textureValue.length > MAX_TEXTURE_VALUE_LENGTH || skin.textureSignature.length > MAX_SIGNATURE_LENGTH) {
-            throw SkinLookupException("Сохранённые данные скина превышают допустимый размер")
-        }
-        val decoded = try {
-            String(Base64.getDecoder().decode(skin.textureValue), StandardCharsets.UTF_8)
-        } catch (exception: IllegalArgumentException) {
-            throw SkinLookupException("Сохранённое значение textures повреждено", exception)
-        }
-        val root = parseObject(decoded, "Сохранённые данные скина повреждены")
-        val signedOwnerId = root["profileId"] as? String
-        if (signedOwnerId != null && parseMojangUuid(signedOwnerId) != skin.ownerUuid) {
-            throw SkinLookupException("UUID подписанного профиля не совпадает с владельцем скина")
-        }
-        val textures = root["textures"] as? Map<*, *> ?: throw SkinLookupException("В сохранённом профиле нет текстур")
-        val skinTexture = textures["SKIN"] as? Map<*, *> ?: throw SkinLookupException("В сохранённом профиле нет скина")
-        val url = skinTexture["url"] as? String ?: throw SkinLookupException("В сохранённом профиле нет адреса текстуры")
-        validateTextureUrl(url)
-        if (url != skin.textureUrl) {
-            throw SkinLookupException("Адрес сохранённой текстуры не совпадает с подписанным свойством")
-        }
-        if (skin.textureSignature.isBlank()) {
-            throw SkinLookupException("В сохранённом профиле отсутствует подпись Mojang")
-        }
-    }
 
     fun lookup(username: String): MojangSkin {
         if (!USERNAME_PATTERN.matches(username)) {
@@ -104,7 +81,7 @@ internal class MojangSkinService {
         val skin = textures["SKIN"] as? Map<*, *>
             ?: throw SkinLookupException("У игрока «$username» не назначен скин")
         val textureUrl = skin["url"] as? String
-            ?: throw SkinLookupException("У игрока «$username» не найден адрес текстуры скина")
+            ?: throw SkinLookupException("У игрока «$username» не найден адрес текстуры")
         validateTextureUrl(textureUrl)
 
         val metadata = skin["metadata"] as? Map<*, *>
@@ -115,8 +92,35 @@ internal class MojangSkinService {
         }
         val actualName = profileJson["name"] as? String ?: username
 
-        // textureValue and textureSignature are kept byte-for-byte as returned by Mojang.
         return MojangSkin(actualName, ownerUuid, textureValue, textureSignature, textureUrl, model)
+    }
+
+    /** Checks a skin loaded from `npcs.yml` before it is used to build the GameProfile. */
+    fun validateStoredSkin(skin: MojangSkin) {
+        if (skin.textureValue.length > MAX_TEXTURE_VALUE_LENGTH || skin.textureSignature.length > MAX_SIGNATURE_LENGTH) {
+            throw SkinLookupException("Сохранённые данные скина превышают допустимый размер")
+        }
+        val decoded = try {
+            String(Base64.getDecoder().decode(skin.textureValue), StandardCharsets.UTF_8)
+        } catch (exception: IllegalArgumentException) {
+            throw SkinLookupException("Сохранённое значение textures повреждено", exception)
+        }
+        val root = parseObject(decoded, "Сохранённые данные скина повреждены")
+        val signedOwnerId = root["profileId"] as? String
+        if (signedOwnerId != null && parseMojangUuid(signedOwnerId) != skin.ownerUuid) {
+            throw SkinLookupException("UUID подписанного профиля не совпадает с владельцем скина")
+        }
+        val textures = root["textures"] as? Map<*, *> ?: throw SkinLookupException("В сохранённом профиле нет текстур")
+        val skinTexture = textures["SKIN"] as? Map<*, *> ?: throw SkinLookupException("В сохранённом профиле нет скина")
+        val url = skinTexture["url"] as? String ?: throw SkinLookupException("В сохранённом профиле нет адреса текстуры")
+        validateTextureUrl(url)
+        if (url != skin.textureUrl) {
+            throw SkinLookupException("Адрес сохранённой текстуры не совпадает с подписанным свойством")
+        }
+        // The default NPC skin is synthetic and carries no signature, so its texture value is exempt.
+        if (skin.textureSignature.isBlank() && skin.textureValue != NpcDefaultSkin.textureValue) {
+            throw SkinLookupException("В сохранённом профиле отсутствует подпись Mojang")
+        }
     }
 
     private fun getJson(uri: URI, notFoundMessage: String): Map<String, Any?> {
@@ -152,8 +156,7 @@ internal class MojangSkinService {
             else -> throw SkinLookupException("Mojang ответил кодом ${response.statusCode()}; попробуйте позже")
         }
 
-        val json = String(bytes, StandardCharsets.UTF_8)
-        return parseObject(json, "Mojang вернул некорректный ответ")
+        return parseObject(String(bytes, StandardCharsets.UTF_8), "Mojang вернул некорректный ответ")
     }
 
     private fun parseMojangUuid(raw: String): UUID {
@@ -295,7 +298,7 @@ internal class MojangSkinService {
             }
             val number = source.substring(start, cursor)
             return number.toLongOrNull() ?: number.toDoubleOrNull()
-            ?: throw IllegalArgumentException("Invalid JSON number")
+                ?: throw IllegalArgumentException("Invalid JSON number")
         }
 
         private fun readDigits() {
@@ -332,4 +335,32 @@ internal class MojangSkinService {
         const val MAX_TEXTURE_VALUE_LENGTH = 48 * 1024
         const val MAX_SIGNATURE_LENGTH = 8 * 1024
     }
+}
+
+/**
+ * Hardcoded skin applied to every NPC spawned through `/spawnnpc` when the Mojang lookup fails.
+ *
+ * The texture is served from textures.minecraft.net; its SHA-1 is
+ * `35ec06f18b1c1400f30d8671abdddb1254e9c36a`. The profile is synthetic
+ * (`profileId` is all zeros), so the texture signature cannot be recomputed —
+ * it is stored empty and [MojangSkinService.validateStoredSkin] skips the
+ * signature check for this skin.
+ */
+internal object NpcDefaultSkin {
+    val ownerUuid: UUID = UUID(0, 0)
+    val ownerName: String = "ZXCNPC"
+    val textureUrl: String =
+        "https://textures.minecraft.net/texture/35ec06f18b1c1400f30d8671abdddb1254e9c36a"
+    val textureValue: String =
+        "eyJ0aW1lc3RhbXAiOiAxNzMzMDAwMDAwLCAicHJvZmlsZUlkIjogIjAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIsICJwcm9maWxlTmFtZSI6ICJaWENOUEMiLCAidGV4dHVyZXMiOiB7IlNLSU4iOiB7InVybCI6ICJodHRwczovL3RleHR1cmVzLm1pbmVjcmFmdC5uZXQvdGV4dHVyZS8zNWVjMDZmMThiMWMxNDAwZjMwZDg2NzFhYmRkZGIxMjU0ZTljMzZhIn19fQ=="
+    val textureSignature: String = ""
+
+    val skin: MojangSkin = MojangSkin(
+        ownerName = ownerName,
+        ownerUuid = ownerUuid,
+        textureValue = textureValue,
+        textureSignature = textureSignature,
+        textureUrl = textureUrl,
+        model = SkinModel.CLASSIC,
+    )
 }

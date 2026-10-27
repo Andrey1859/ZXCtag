@@ -3,7 +3,7 @@ version: ${version}
 main: ru.andrey1859.zxctag.ZXCtagPlugin
 api-version: "1.21"
 author: Andrey1859
-description: Префиксы игроков и NPC со скином Mojang
+description: Префиксы игроков и NPC со скином Java-аккаунта (с встроенным скином на случай недоступности Mojang)
 commands:
   zxc:
     description: Выдать префикс с ZXC, класс и уровень

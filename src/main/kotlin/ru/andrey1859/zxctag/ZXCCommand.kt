@@ -84,8 +84,10 @@ object ZXCCommand : CommandExecutor, TabCompleter {
             current.removeEntry(player.name)
         }
 
-        team.setPrefix(PrefixBuilder.build(className, status, lvl, us, withZxc))
-        team.setSuffix("")
+        runCatching { team.setPrefix(PrefixBuilder.tabPrefix(className, withZxc)) }
+            .onFailure { ZXCtagPlugin.instance.logger.warning("Не удалось установить префикс таблицы для ${player.name}: ${it.message}") }
+        runCatching { team.setSuffix(PrefixBuilder.tabSuffix(status)) }
+            .onFailure { ZXCtagPlugin.instance.logger.warning("Не удалось установить суффикс таблицы для ${player.name}: ${it.message}") }
         if (!team.hasEntry(player.name)) {
             team.addEntry(player.name)
         }

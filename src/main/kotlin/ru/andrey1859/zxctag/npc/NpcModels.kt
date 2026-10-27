@@ -49,15 +49,7 @@ internal data class NpcTransform(
     companion object {
         fun capture(player: Player): NpcTransform {
             val location = player.location
-            val handle = runCatching {
-                player.javaClass.methods
-                    .firstOrNull { it.name == "getHandle" && it.parameterCount == 0 }
-                    ?.invoke(player)
-            }.getOrNull()
-
-            val bodyYaw = handle?.readFloatField("yBodyRot") ?: location.yaw
-            val headYaw = handle?.readFloatField("yHeadRot") ?: location.yaw
-            val pitch = handle?.readFloatField("xRot") ?: location.pitch
+            val angles = NpcPoseCapture.consume(player)
             val pose = when {
                 player.isSneaking -> NpcPose.CROUCHING
                 player.isSwimming -> NpcPose.SWIMMING
@@ -70,9 +62,9 @@ internal data class NpcTransform(
                 x = location.x,
                 y = location.y,
                 z = location.z,
-                bodyYaw = normalizeYaw(bodyYaw),
-                headYaw = normalizeYaw(headYaw),
-                pitch = pitch.coerceIn(-90f, 90f),
+                bodyYaw = normalizeYaw(angles.body),
+                headYaw = normalizeYaw(angles.head),
+                pitch = angles.pitch.coerceIn(-90f, 90f),
                 pose = pose,
             )
         }
@@ -83,22 +75,6 @@ internal data class NpcTransform(
             if (normalized > 180f) normalized -= 360f
             if (normalized < -180f) normalized += 360f
             return normalized
-        }
-
-        private fun Any.readFloatField(name: String): Float? {
-            var type: Class<*>? = javaClass
-            while (type != null) {
-                val currentType = type
-                val field = runCatching { currentType.getDeclaredField(name) }.getOrNull()
-                if (field != null) {
-                    return runCatching {
-                        field.trySetAccessible()
-                        (field.get(this) as? Number)?.toFloat()
-                    }.getOrNull()?.takeIf { it.isFinite() }
-                }
-                type = type.superclass
-            }
-            return null
         }
     }
 }

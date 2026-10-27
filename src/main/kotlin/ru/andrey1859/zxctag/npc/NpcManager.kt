@@ -17,11 +17,18 @@ import java.util.UUID
 
 internal const val NPC_INTERACTION_RADIUS_BLOCKS = 5.0
 
-internal class NpcManager(private val plugin: JavaPlugin) : Listener {
-    private val renderer = NpcServerRenderer(plugin)
-    private val skinValidator = MojangSkinService()
+/**
+ * Holds NPC records, their rendered packet-only ServerPlayer entities and the
+ * scoreboard teams that show the NPC prefix in the tab list. Persists to
+ * `plugins/ZXCtag/npcs.yml` and restores NPCs after restarts.
+ */
+internal class NpcManager(
+    private val plugin: JavaPlugin,
+    private val packets: NpcPackets,
+    private val skinValidator: MojangSkinService,
+) : Listener {
     private val records = linkedMapOf<String, NpcRecord>()
-    private val rendered = linkedMapOf<String, NpcServerRenderer.RenderedNpc>()
+    private val rendered = linkedMapOf<String, NpcPackets.RenderedNpc>()
     private val pending = mutableSetOf<String>()
     private val storageFile = File(plugin.dataFolder, "npcs.yml")
 
@@ -50,16 +57,18 @@ internal class NpcManager(private val plugin: JavaPlugin) : Listener {
         })
     }
 
-    fun reserve(name: String): Boolean {
+    /** Reserves a name for a new NPC, or returns the exact reason it is taken. */
+    fun reserve(name: String): String? {
         val key = npcKey(name)
-        if (key in records || key in pending) return false
-        if (Bukkit.getOnlinePlayers().any { it.name.equals(name, ignoreCase = true) }) return false
+        if (key in records) return "Имя $name занято NPC."
+        if (key in pending) return "Имя $name занято: предыдущее создание NPC ещё выполняется, подождите и попробуйте снова."
+        if (Bukkit.getOnlinePlayers().any { it.name.equals(name, ignoreCase = true) }) return "Имя $name занято игроком."
 
         val existingTeam = Bukkit.getScoreboardManager()?.mainScoreboard?.getEntryTeam(name)
-        if (existingTeam != null && existingTeam.name != npcTeamName(key)) return false
+        if (existingTeam != null && existingTeam.name != npcTeamName(key)) return "Имя $name занято другой командой табло."
 
         pending += key
-        return true
+        return null
     }
 
     fun release(name: String) {
@@ -108,7 +117,7 @@ internal class NpcManager(private val plugin: JavaPlugin) : Listener {
 
         for (viewer in Bukkit.getOnlinePlayers()) {
             if (viewer.world.name != updated.world) continue
-            runCatching { renderer.updateEquipment(viewer, updatedRendered) }
+            runCatching { packets.updateEquipment(viewer, updatedRendered) }
                 .onFailure { plugin.logger.warning("Не удалось обновить предмет в руках NPC ${updated.name} для ${viewer.name}: ${it.message}") }
         }
     }
@@ -118,7 +127,7 @@ internal class NpcManager(private val plugin: JavaPlugin) : Listener {
         try {
             check(key !in records) { "NPC с именем ${record.name} уже существует" }
             val normalizedRecord = record.copy(id = key)
-            val entity = renderer.create(normalizedRecord)
+            val entity = packets.create(normalizedRecord)
             applyNpcPrefix(normalizedRecord)
             records[key] = normalizedRecord
             rendered[key] = entity
@@ -132,7 +141,7 @@ internal class NpcManager(private val plugin: JavaPlugin) : Listener {
             }
             for (player in Bukkit.getOnlinePlayers()) {
                 if (player.world.name == record.world) {
-                    runCatching { renderer.showTo(player, entity) }
+                    runCatching { packets.showTo(player, entity) }
                         .onFailure { plugin.logger.warning("Не удалось показать NPC ${record.name} игроку ${player.name}: ${it.message}") }
                 }
             }
@@ -145,7 +154,7 @@ internal class NpcManager(private val plugin: JavaPlugin) : Listener {
         for (player in Bukkit.getOnlinePlayers()) {
             for ((key, entity) in rendered) {
                 if (records[key]?.world == player.world.name) {
-                    runCatching { renderer.hideFrom(player, entity) }
+                    runCatching { packets.hideFrom(player, entity) }
                         .onFailure { plugin.logger.fine("Не удалось скрыть NPC при выключении: ${it.message}") }
                 }
             }
@@ -176,19 +185,19 @@ internal class NpcManager(private val plugin: JavaPlugin) : Listener {
         for (record in records.values) {
             if (record.world != player.world.name) continue
             val entity = rendered[record.id] ?: renderIfWorldLoaded(record) ?: continue
-            runCatching { renderer.showTo(player, entity) }
+            runCatching { packets.showTo(player, entity) }
                 .onFailure { plugin.logger.warning("Не удалось показать NPC ${record.name}: ${it.message}") }
         }
     }
 
-    private fun renderIfWorldLoaded(record: NpcRecord): NpcServerRenderer.RenderedNpc? {
+    private fun renderIfWorldLoaded(record: NpcRecord): NpcPackets.RenderedNpc? {
         rendered[record.id]?.let { return it }
         if (Bukkit.getWorld(record.world) == null) return null
         return runCatching {
-            renderer.create(record).also { rendered[record.id] = it }
+            packets.create(record).also { rendered[record.id] = it }
         }.onFailure {
             plugin.logger.warning("Не удалось создать NPC ${record.name}: ${it.message}")
-            plugin.logger.fine(it.stackTraceToString())
+            plugin.logger.warning(it.stackTraceToString())
         }.getOrNull()
     }
 
@@ -208,8 +217,10 @@ internal class NpcManager(private val plugin: JavaPlugin) : Listener {
             "имя ${record.name} уже используется другой командой табло"
         }
         val team = board.getTeam(teamName) ?: board.registerNewTeam(teamName)
-        team.setPrefix(PrefixBuilder.build(record.className, record.status, record.level, record.us, withZxc = true))
-        team.setSuffix("")
+        runCatching { team.setPrefix(PrefixBuilder.tabPrefix(record.className, withZxc = true)) }
+            .onFailure { plugin.logger.warning("Не удалось установить префикс таблицы для NPC ${record.name}: ${it.message}") }
+        runCatching { team.setSuffix(PrefixBuilder.tabSuffix(record.status)) }
+            .onFailure { plugin.logger.warning("Не удалось установить суффикс таблицы для NPC ${record.name}: ${it.message}") }
         if (!team.hasEntry(record.name)) team.addEntry(record.name)
     }
 
@@ -251,8 +262,8 @@ internal class NpcManager(private val plugin: JavaPlugin) : Listener {
         val status = section.getString("status")
             ?.let { saved -> ZXCCommand.STATUSES.firstOrNull { it.equals(saved, ignoreCase = true) } }
             ?: ZXCCommand.STATUSES.first()
-        val level = section.getString("level")?.takeIf { it in ZXCCommand.LEVELS } ?: ZXCCommand.LEVELS.first()
-        val us = section.getString("us")?.takeIf { it in ZXCCommand.US_VALUES } ?: ZXCCommand.US_VALUES.first()
+        val level = section.getString("level")?.takeIf { it.isNotBlank() } ?: ZXCCommand.LEVELS.first()
+        val us = section.getString("us")?.takeIf { it.isNotBlank() } ?: ZXCCommand.US_VALUES.first()
         val mainHandItem = section.getItemStack("equipment.mainHand")
             ?.takeIf { it.amount > 0 && !it.type.isAir }
             ?.clone()
@@ -265,8 +276,7 @@ internal class NpcManager(private val plugin: JavaPlugin) : Listener {
         val ownerUuid = UUID.fromString(skinSection.getString("ownerUuid") ?: error("не указан UUID скина"))
         val textureValue = skinSection.getString("textureValue")?.takeIf { it.isNotBlank() }
             ?: error("не сохранено значение textures")
-        val textureSignature = skinSection.getString("textureSignature")?.takeIf { it.isNotBlank() }
-            ?: error("не сохранена подпись textures")
+        val textureSignature = skinSection.getString("textureSignature") ?: ""
         val textureUrl = skinSection.getString("textureUrl")?.takeIf { it.isNotBlank() }
             ?: error("не сохранён адрес текстуры")
         val model = skinSection.getString("model")
